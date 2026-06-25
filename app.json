@@ -4,18 +4,22 @@
     "slug": "Mirisu",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/App logo.png",
+    "icon": "./assets/App Logo.png",
     "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/Splash logo.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#18181A"
+    },
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "package": "com.gabriel.anilist",
+      "icon": "./assets/App Logo.png",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/android-icon-foreground.png",
-        "backgroundImage": "./assets/android-icon-background.png",
-        "monochromeImage": "./assets/android-icon-monochrome.png"
+        "foregroundImage": "./assets/App Logo.png",
+        "backgroundColor": "#18181A"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
@@ -25,6 +29,11 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "173f5c22-71c3-4bdf-b7c7-bf24bd071e80"
+      }
     }
   }
 }
