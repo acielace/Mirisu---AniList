@@ -1,0 +1,9 @@
+{
+  "latestVersion": "1.0.0",
+  "downloadUrl": "https://github.com/acielace/Mirisu---AniList/releases/latest/download/Mirisu.apk",
+  "changelog": [
+    "Fixed the chat box keyboard issue.",
+    "Added automatic backup functionality.",
+    "Improved storage location settings."
+  ]
+}
