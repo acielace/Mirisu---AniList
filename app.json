@@ -4,27 +4,27 @@
     "slug": "Mirisu",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/App Logo.png",
+    "icon": "./assets/app_logo.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/Splash logo.png",
+      "image": "./assets/app_logo.png",
       "resizeMode": "contain",
-      "backgroundColor": "#18181A"
+      "backgroundColor": "#000000"
     },
     "ios": {
       "supportsTablet": true
     },
     "android": {
       "package": "com.gabriel.anilist",
-      "icon": "./assets/App Logo.png",
+      "icon": "./assets/app_logo.png",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/App Logo.png",
-        "backgroundColor": "#18181A"
+        "foregroundImage": "./assets/app_logo.png",
+        "backgroundColor": "#000000"
       },
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
       ]
     },
     "web": {
@@ -34,6 +34,10 @@
       "eas": {
         "projectId": "173f5c22-71c3-4bdf-b7c7-bf24bd071e80"
       }
-    }
+    },
+    "plugins": [
+      "expo-font",
+      "expo-document-picker"
+    ]
   }
 }

@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Modal, TextInput, Alert, Animated, Platform, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Modal, TextInput, Alert, Animated, Platform, StatusBar, KeyboardAvoidingView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppContext } from '../context/AppContext';
 import { useNavigation } from '@react-navigation/native';
@@ -129,7 +129,6 @@ export default function EditCategoriesScreen() {
   };
 
   return (
-    // FIX: Added dynamic paddingTop for Android status bar
     <SafeAreaView style={{ flex: 1, backgroundColor: bgColor, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}>
       
       <View style={styles.header}>
@@ -149,7 +148,6 @@ export default function EditCategoriesScreen() {
             onReordered={onReordered}
             renderItem={renderItem}
             containerStyle={{ flex: 1 }}
-            // FIX: Added paddingBottom so the last item clears the floating action button
             contentContainerStyle={{ paddingBottom: 100 }} 
           />
         )}
@@ -160,44 +158,50 @@ export default function EditCategoriesScreen() {
         <Text style={styles.fabText}>Add</Text>
       </TouchableOpacity>
 
+      {/* ADD CATEGORY MODAL */}
       <Modal animationType="fade" transparent={true} visible={addCatVisible} onRequestClose={() => closeSheet(setAddCatVisible)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => closeSheet(setAddCatVisible)}>
-          <Animated.View onStartShouldSetResponder={() => true} style={[styles.sheetContent, { backgroundColor: cardColor, borderColor, transform: [{ translateY: actionAnim }] }]}>
-            <View style={styles.dragIndicator} />
-            <Text style={[styles.sectionTitle, { color: textColor, marginTop: 0 }]}>New Category</Text>
-            <TextInput
-              style={[styles.inputField, { color: textColor, borderColor }]}
-              placeholder="e.g., Favorites, Watching, On Hold"
-              placeholderTextColor="#888"
-              value={newCatName}
-              onChangeText={setNewCatName}
-              autoFocus
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity onPress={() => closeSheet(setAddCatVisible)} style={styles.modalBtn}><Text style={{ color: '#888', fontWeight: 'bold' }}>Cancel</Text></TouchableOpacity>
-              <TouchableOpacity onPress={handleAddCategory} style={styles.modalBtn}><Text style={{ color: '#4FA4FF', fontWeight: 'bold' }}>Add</Text></TouchableOpacity>
-            </View>
-          </Animated.View>
-        </TouchableOpacity>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => closeSheet(setAddCatVisible)}>
+            <Animated.View onStartShouldSetResponder={() => true} style={[styles.sheetContent, { backgroundColor: cardColor, borderColor, transform: [{ translateY: actionAnim }] }]}>
+              <View style={styles.dragIndicator} />
+              <Text style={[styles.sectionTitle, { color: textColor, marginTop: 0 }]}>New Category</Text>
+              <TextInput
+                style={[styles.inputField, { color: textColor, borderColor }]}
+                placeholder="e.g., Favorites, Watching, On Hold"
+                placeholderTextColor="#888"
+                value={newCatName}
+                onChangeText={setNewCatName}
+                autoFocus
+              />
+              <View style={styles.modalActions}>
+                <TouchableOpacity onPress={() => closeSheet(setAddCatVisible)} style={styles.modalBtn}><Text style={{ color: '#888', fontWeight: 'bold' }}>Cancel</Text></TouchableOpacity>
+                <TouchableOpacity onPress={handleAddCategory} style={styles.modalBtn}><Text style={{ color: '#4FA4FF', fontWeight: 'bold' }}>Add</Text></TouchableOpacity>
+              </View>
+            </Animated.View>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
+      {/* EDIT CATEGORY MODAL */}
       <Modal animationType="fade" transparent={true} visible={editCatVisible} onRequestClose={() => closeSheet(setEditCatVisible)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => closeSheet(setEditCatVisible)}>
-          <Animated.View onStartShouldSetResponder={() => true} style={[styles.sheetContent, { backgroundColor: cardColor, borderColor, transform: [{ translateY: actionAnim }] }]}>
-            <View style={styles.dragIndicator} />
-            <Text style={[styles.sectionTitle, { color: textColor, marginTop: 0 }]}>Rename Category</Text>
-            <TextInput
-              style={[styles.inputField, { color: textColor, borderColor }]}
-              value={newCatName}
-              onChangeText={setNewCatName}
-              autoFocus
-            />
-            <View style={styles.modalActions}>
-              <TouchableOpacity onPress={() => closeSheet(setEditCatVisible)} style={styles.modalBtn}><Text style={{ color: '#888', fontWeight: 'bold' }}>Cancel</Text></TouchableOpacity>
-              <TouchableOpacity onPress={handleEditCategory} style={styles.modalBtn}><Text style={{ color: '#4FA4FF', fontWeight: 'bold' }}>Save</Text></TouchableOpacity>
-            </View>
-          </Animated.View>
-        </TouchableOpacity>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
+          <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => closeSheet(setEditCatVisible)}>
+            <Animated.View onStartShouldSetResponder={() => true} style={[styles.sheetContent, { backgroundColor: cardColor, borderColor, transform: [{ translateY: actionAnim }] }]}>
+              <View style={styles.dragIndicator} />
+              <Text style={[styles.sectionTitle, { color: textColor, marginTop: 0 }]}>Rename Category</Text>
+              <TextInput
+                style={[styles.inputField, { color: textColor, borderColor }]}
+                value={newCatName}
+                onChangeText={setNewCatName}
+                autoFocus
+              />
+              <View style={styles.modalActions}>
+                <TouchableOpacity onPress={() => closeSheet(setEditCatVisible)} style={styles.modalBtn}><Text style={{ color: '#888', fontWeight: 'bold' }}>Cancel</Text></TouchableOpacity>
+                <TouchableOpacity onPress={handleEditCategory} style={styles.modalBtn}><Text style={{ color: '#4FA4FF', fontWeight: 'bold' }}>Save</Text></TouchableOpacity>
+              </View>
+            </Animated.View>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
 
     </SafeAreaView>
@@ -205,7 +209,6 @@ export default function EditCategoriesScreen() {
 }
 
 const styles = StyleSheet.create({
-  // FIX: Added a slight top margin to the header to breathe a bit more below the status bar
   header: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 5, marginBottom: 15, marginTop: 5 },
   headerText: { fontSize: 22, marginLeft: 10 },
   editCatRow: { flexDirection: 'row', alignItems: 'center', padding: 18, borderRadius: 12, marginBottom: 12 },

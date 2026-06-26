@@ -34,7 +34,6 @@ export default function LuxionChat() {
         try {
           const savedData = await AsyncStorage.getItem('@luxion_history');
           if (savedData) {
-            // Strip out any old tool logic that might have gotten saved previously
             const parsed = JSON.parse(savedData).filter((m: any) => m.role !== 'tool' && !m.tool_calls);
             setLuxionMessages(parsed.length > 0 ? parsed : [defaultGreeting]);
           } else {
@@ -93,7 +92,6 @@ export default function LuxionChat() {
 
     const miniList = animeList.map(a => `${a.title} (${a.status} - ${a.rating}/5)`).join(' | ');
 
-    // --- REVERTED TO FRIENDLY CONVERSATIONALIST + HONESTY RULE ---
     const systemPrompt = `You are Luxion, a super friendly, upbeat, and enthusiastic AI anime companion!
     
     STRICT RULES:
@@ -132,7 +130,7 @@ export default function LuxionChat() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile', // Keeping him on the smart model!
+          model: 'llama-3.3-70b-versatile',
           messages: apiMessages,
           temperature: 0.7,
         })
@@ -162,7 +160,8 @@ export default function LuxionChat() {
       </TouchableOpacity>
 
       <Modal visible={isLuxionVisible} animationType="slide" transparent={true} onRequestClose={() => setIsLuxionVisible(false)}>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1, justifyContent: 'flex-end' }}>
+        {/* Changed behavior here to 'height' for Android so the keyboard correctly pushes the input up */}
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end' }}>
           <TouchableOpacity style={styles.modalOverlayDismiss} activeOpacity={1} onPress={() => setIsLuxionVisible(false)} />
           
           <View style={[styles.chatContainer, { backgroundColor: bgColor, borderColor }]}>
@@ -241,7 +240,7 @@ const styles = StyleSheet.create({
   messageBubble: { maxWidth: '85%', padding: 14, borderRadius: 18, marginBottom: 12 },
   userBubble: { alignSelf: 'flex-end', borderBottomRightRadius: 4 },
   botBubble: { alignSelf: 'flex-start', borderWidth: 1, borderBottomLeftRadius: 4 },
-  chatInputContainer: { flexDirection: 'row', padding: 12, borderTopWidth: 1, alignItems: 'center' },
+  chatInputContainer: { flexDirection: 'row', padding: 12, paddingBottom: 60, borderTopWidth: 1, alignItems: 'center' },
   chatInput: { flex: 1, paddingHorizontal: 15, paddingVertical: 10, borderRadius: 20, borderWidth: 1, fontSize: 15, marginRight: 10 },
   chatSendButton: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' }
 });

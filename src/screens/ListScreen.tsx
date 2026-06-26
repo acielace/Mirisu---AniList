@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, useWindowDimensions, FlatList, Image, Modal, SafeAreaView, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, useWindowDimensions, FlatList, Image, Modal, SafeAreaView, Animated, KeyboardAvoidingView, Platform, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppContext } from '../context/AppContext';
 import { AnimeEntry } from '../types';
@@ -377,228 +377,234 @@ export default function ListScreen() {
 
       <LuxionChat />
 
+      {/* --- Details Modal --- */}
       <Modal visible={!!viewAnime} animationType="slide" transparent={false} onRequestClose={() => setViewAnime(null)}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: bgColor }}>
-          
-          <View style={[styles.modalHeader, { borderBottomColor: borderColor }]}>
-            <TouchableOpacity onPress={() => setViewAnime(null)} style={styles.closeBtn}><Ionicons name="chevron-down" size={28} color={textColor} /></TouchableOpacity>
-            <Text style={[styles.modalHeaderText, { color: textColor }]}>Details</Text>
-            <View style={{ width: 28 }} />
-          </View>
-
-          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }}>
-            <View style={[styles.modalImageContainer, { backgroundColor: cardBg, borderColor }]}>
-              {viewAnime?.imageUri ? <Image source={{ uri: viewAnime.imageUri }} style={styles.modalImage} /> : <Ionicons name="image-outline" size={60} color="#888" />}
+        <SafeAreaView style={{ flex: 1, backgroundColor: bgColor, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}>
+          <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+            
+            <View style={[styles.modalHeader, { borderBottomColor: borderColor }]}>
+              <TouchableOpacity onPress={() => setViewAnime(null)} style={styles.closeBtn}><Ionicons name="chevron-down" size={28} color={textColor} /></TouchableOpacity>
+              <Text style={[styles.modalHeaderText, { color: textColor }]}>Details</Text>
+              <View style={{ width: 28 }} />
             </View>
 
-            <Text style={[styles.modalTitle, { color: textColor }]}>{viewAnime?.title}</Text>
-            
-            {viewAnime?.genres && viewAnime.genres.length > 0 && (
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 15 }}>
-                {viewAnime.genres.map((genre, idx) => (
-                  <View key={idx} style={[styles.modalGenrePill, { borderColor: accentColor, backgroundColor: cardBg }]}>
-                    <Text style={{ color: textColor, fontSize: 13, fontWeight: '600' }}>{genre}</Text>
-                  </View>
-                ))}
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+              <View style={[styles.modalImageContainer, { backgroundColor: cardBg, borderColor }]}>
+                {viewAnime?.imageUri ? <Image source={{ uri: viewAnime.imageUri }} style={styles.modalImage} /> : <Ionicons name="image-outline" size={60} color="#888" />}
               </View>
-            )}
 
-            {viewAnime?.status !== 'Will Watch' && (
-              <View style={styles.modalStars}>
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <TouchableOpacity key={star} onPress={() => updateRating(star)}>
-                    <Ionicons 
-                      name={star <= (viewAnime?.rating || 0) ? "star" : "star-outline"} 
-                      size={36} 
-                      color={star <= (viewAnime?.rating || 0) ? accentColor : "#555"} 
-                    />
-                  </TouchableOpacity>
-                ))}
-              </View>
-            )}
-
-            {viewAnime?.description ? (
-              <View style={{ marginBottom: 25 }}>
-                <Text style={[styles.modalSectionTitle, { color: textColor, marginTop: 0 }]}>Synopsis</Text>
-                <Text 
-                  style={{ color: textColor, opacity: 0.8, lineHeight: 22 }}
-                  numberOfLines={isSynopsisExpanded ? undefined : 3}
-                >
-                  {viewAnime.description}
-                </Text>
-                <TouchableOpacity onPress={() => setIsSynopsisExpanded(!isSynopsisExpanded)} style={{ marginTop: 8 }}>
-                  <Text style={{ color: accentColor, fontWeight: 'bold' }}>{isSynopsisExpanded ? 'Show Less' : 'Read More'}</Text>
-                </TouchableOpacity>
-              </View>
-            ) : null}
-
-            {viewAnime?.status !== 'Will Watch' && (
-              <>
-                <Text style={[styles.modalSectionTitle, { color: textColor, marginTop: 0 }]}>Progress</Text>
-                <View style={styles.modalProgressContainer}>
-                  <View style={[styles.modalProgressBox, { backgroundColor: cardBg, borderColor }]}>
-                    <Text style={{ color: '#888', fontWeight: 'bold', marginBottom: 5 }}>Season</Text>
-                    <View style={styles.modalProgressControls}>
-                      <TouchableOpacity onPress={() => updateProgress('season', -1)}><Ionicons name="remove-circle" size={28} color="#888" /></TouchableOpacity>
-                      <Text style={[styles.modalProgressValue, { color: textColor }]}>{viewAnime?.season || 1}</Text>
-                      <TouchableOpacity onPress={() => updateProgress('season', 1)}><Ionicons name="add-circle" size={28} color={accentColor} /></TouchableOpacity>
+              <Text style={[styles.modalTitle, { color: textColor }]}>{viewAnime?.title}</Text>
+              
+              {viewAnime?.genres && viewAnime.genres.length > 0 && (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 15 }}>
+                  {viewAnime.genres.map((genre, idx) => (
+                    <View key={idx} style={[styles.modalGenrePill, { borderColor: accentColor, backgroundColor: cardBg }]}>
+                      <Text style={{ color: textColor, fontSize: 13, fontWeight: '600' }}>{genre}</Text>
                     </View>
-                  </View>
-                  
-                  <View style={[styles.modalProgressBox, { backgroundColor: cardBg, borderColor }]}>
-                    <Text style={{ color: '#888', fontWeight: 'bold', marginBottom: 5 }}>Episode</Text>
-                    <View style={styles.modalProgressControls}>
-                      <TouchableOpacity onPress={() => updateProgress('episode', -1)}><Ionicons name="remove-circle" size={28} color="#888" /></TouchableOpacity>
-                      <Text style={[styles.modalProgressValue, { color: textColor }]}>{viewAnime?.episode || 0}</Text>
-                      <TouchableOpacity onPress={() => updateProgress('episode', 1)}><Ionicons name="add-circle" size={28} color={accentColor} /></TouchableOpacity>
-                    </View>
-                  </View>
+                  ))}
                 </View>
-              </>
-            )}
+              )}
 
-            <Text style={[styles.modalSectionTitle, { color: textColor }]}>Add to Category</Text>
-            {customCategories.length > 0 ? (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagScroll}>
-                {customCategories.map(cat => { 
-                  const isActive = (viewAnime?.categories || []).includes(cat);
-                  return (
-                    <TouchableOpacity 
-                      key={cat} 
-                      style={[styles.tagPill, { backgroundColor: isActive ? accentColor : cardBg, borderColor: isActive ? accentColor : borderColor }]}
-                      onPress={() => toggleCategory(cat)}
-                    >
-                      <Text style={[styles.tagText, { color: isActive ? '#fff' : textColor }]}>{cat}</Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </ScrollView>
-            ) : (
-              <Text style={{ color: '#888', fontStyle: 'italic', marginBottom: 25, marginTop: 5 }}>No custom categories added. You can add them from the top right menu!</Text>
-            )}
-
-            {viewAnime?.status !== 'Will Watch' && (
-              <View style={{ marginBottom: 40 }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 10 }}>
-                  <Text style={[styles.modalSectionTitle, { color: textColor, margin: 0 }]}>My Review</Text>
-                  {!isEditingComment ? (
-                    <TouchableOpacity onPress={() => setIsEditingComment(true)} style={{ padding: 5 }}>
-                      <Ionicons name="pencil" size={20} color={accentColor} />
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity onPress={saveComment} style={{ padding: 5 }}>
-                      <Text style={{ color: accentColor, fontWeight: 'bold', fontSize: 16 }}>Save</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-
-                {isEditingComment ? (
-                  <TextInput 
-                    style={[styles.input, styles.textArea, { backgroundColor: cardBg, borderColor, color: textColor }]} 
-                    placeholder="Change your mind? Write a new review..." 
-                    placeholderTextColor="#888"
-                    multiline 
-                    value={tempComment}
-                    onChangeText={setTempComment}
-                    autoFocus
-                  />
-                ) : (
-                  viewAnime?.comments ? (
-                    <View style={[styles.reviewBox, { backgroundColor: cardBg, borderColor }]}>
-                      <Text style={{ color: textColor, fontSize: 16, lineHeight: 24 }}>{viewAnime.comments}</Text>
-                    </View>
-                  ) : (
-                    <TouchableOpacity 
-                      style={[styles.reviewBox, { backgroundColor: cardBg, borderColor, justifyContent: 'center', alignItems: 'center', borderStyle: 'dashed' }]} 
-                      onPress={() => setIsEditingComment(true)}
-                    >
-                      <Text style={{ color: '#888', fontStyle: 'italic' }}>Tap here to add a review...</Text>
-                    </TouchableOpacity>
-                  )
-                )}
-              </View>
-            )}
-
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
-
-      <Modal visible={!!movingAnime} animationType="slide" transparent={false} onRequestClose={() => setMovingAnime(null)}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: bgColor }}>
-          
-          <View style={[styles.modalHeader, { borderBottomColor: borderColor }]}>
-            <TouchableOpacity onPress={() => setMovingAnime(null)} style={styles.closeBtn}><Ionicons name="close" size={28} color={textColor} /></TouchableOpacity>
-            <Text style={[styles.modalHeaderText, { color: textColor }]}>Update Status</Text>
-            <View style={{ width: 28 }} />
-          </View>
-
-          <ScrollView style={{ flex: 1, padding: 20 }} keyboardShouldPersistTaps="handled">
-            
-            <Text style={{ color: '#888', fontSize: 14, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 5 }}>Moving Anime</Text>
-            <Text style={[styles.modalTitle, { color: textColor, textAlign: 'left', marginBottom: 25 }]}>{movingAnime?.title}</Text>
-
-            <Text style={[styles.formLabel, { color: textColor }]}>New Status</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 15 }}>
-              {allTabs.map((s) => (
-                <TouchableOpacity 
-                  key={s} 
-                  style={[styles.statusButton, { backgroundColor: cardBg, borderColor }, moveStatus === s && { backgroundColor: accentColor, borderColor: accentColor }]}
-                  onPress={() => setMoveStatus(s)}
-                >
-                  <Text style={[styles.statusText, moveStatus === s && styles.statusTextActive]}>{s}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-
-            {moveStatus !== 'Will Watch' && (
-              <>
-                <Text style={[styles.formLabel, { color: textColor, marginTop: 10 }]}>Progress</Text>
-                <View style={styles.progressContainer}>
-                  <View style={[styles.counterCard, { backgroundColor: cardBg, borderColor }]}>
-                    <Text style={[styles.counterLabel, { color: textColor }]}>Season</Text>
-                    <View style={styles.counterControls}>
-                      <TouchableOpacity onPress={() => setMoveSeason(Math.max(1, moveSeason - 1))}><Ionicons name="remove-circle" size={32} color="#888" /></TouchableOpacity>
-                      <Text style={[styles.counterValue, { color: textColor }]}>{moveSeason}</Text>
-                      <TouchableOpacity onPress={() => setMoveSeason(moveSeason + 1)}><Ionicons name="add-circle" size={32} color={accentColor} /></TouchableOpacity>
-                    </View>
-                  </View>
-
-                  <View style={[styles.counterCard, { backgroundColor: cardBg, borderColor }]}>
-                    <Text style={[styles.counterLabel, { color: textColor }]}>Episode</Text>
-                    <View style={styles.counterControls}>
-                      <TouchableOpacity onPress={() => setMoveEpisode(Math.max(0, moveEpisode - 1))}><Ionicons name="remove-circle" size={32} color="#888" /></TouchableOpacity>
-                      <Text style={[styles.counterValue, { color: textColor }]}>{moveEpisode}</Text>
-                      <TouchableOpacity onPress={() => setMoveEpisode(moveEpisode + 1)}><Ionicons name="add-circle" size={32} color={accentColor} /></TouchableOpacity>
-                    </View>
-                  </View>
-                </View>
-
-                <Text style={[styles.formLabel, { color: textColor }]}>Rating</Text>
-                <View style={styles.starsContainer}>
+              {viewAnime?.status !== 'Will Watch' && (
+                <View style={styles.modalStars}>
                   {[1, 2, 3, 4, 5].map((star) => (
-                    <TouchableOpacity key={star} onPress={() => setMoveRating(star)}>
-                      <Ionicons name={star <= moveRating ? "star" : "star-outline"} size={36} color={star <= moveRating ? accentColor : "#555"} />
+                    <TouchableOpacity key={star} onPress={() => updateRating(star)}>
+                      <Ionicons 
+                        name={star <= (viewAnime?.rating || 0) ? "star" : "star-outline"} 
+                        size={36} 
+                        color={star <= (viewAnime?.rating || 0) ? accentColor : "#555"} 
+                      />
                     </TouchableOpacity>
                   ))}
                 </View>
+              )}
 
-                <Text style={[styles.formLabel, { color: textColor }]}>Comments / Review</Text>
-                <TextInput 
-                  style={[styles.input, styles.textArea, { backgroundColor: cardBg, borderColor, color: textColor }]} 
-                  placeholder="What did you think about it?" 
-                  placeholderTextColor="#888"
-                  multiline 
-                  value={moveComments}
-                  onChangeText={setMoveComments}
-                />
-              </>
-            )}
+              {viewAnime?.description ? (
+                <View style={{ marginBottom: 25 }}>
+                  <Text style={[styles.modalSectionTitle, { color: textColor, marginTop: 0 }]}>Synopsis</Text>
+                  <Text 
+                    style={{ color: textColor, opacity: 0.8, lineHeight: 22 }}
+                    numberOfLines={isSynopsisExpanded ? undefined : 3}
+                  >
+                    {viewAnime.description}
+                  </Text>
+                  <TouchableOpacity onPress={() => setIsSynopsisExpanded(!isSynopsisExpanded)} style={{ marginTop: 8 }}>
+                    <Text style={{ color: accentColor, fontWeight: 'bold' }}>{isSynopsisExpanded ? 'Show Less' : 'Read More'}</Text>
+                  </TouchableOpacity>
+                </View>
+              ) : null}
 
-            <TouchableOpacity style={[styles.saveButton, { backgroundColor: accentColor }]} onPress={handleSaveMove}>
-              <Text style={styles.saveButtonText}>Save Changes</Text>
-            </TouchableOpacity>
+              {viewAnime?.status !== 'Will Watch' && (
+                <>
+                  <Text style={[styles.modalSectionTitle, { color: textColor, marginTop: 0 }]}>Progress</Text>
+                  <View style={styles.modalProgressContainer}>
+                    <View style={[styles.modalProgressBox, { backgroundColor: cardBg, borderColor }]}>
+                      <Text style={{ color: '#888', fontWeight: 'bold', marginBottom: 5 }}>Season</Text>
+                      <View style={styles.modalProgressControls}>
+                        <TouchableOpacity onPress={() => updateProgress('season', -1)}><Ionicons name="remove-circle" size={28} color="#888" /></TouchableOpacity>
+                        <Text style={[styles.modalProgressValue, { color: textColor }]}>{viewAnime?.season || 1}</Text>
+                        <TouchableOpacity onPress={() => updateProgress('season', 1)}><Ionicons name="add-circle" size={28} color={accentColor} /></TouchableOpacity>
+                      </View>
+                    </View>
+                    
+                    <View style={[styles.modalProgressBox, { backgroundColor: cardBg, borderColor }]}>
+                      <Text style={{ color: '#888', fontWeight: 'bold', marginBottom: 5 }}>Episode</Text>
+                      <View style={styles.modalProgressControls}>
+                        <TouchableOpacity onPress={() => updateProgress('episode', -1)}><Ionicons name="remove-circle" size={28} color="#888" /></TouchableOpacity>
+                        <Text style={[styles.modalProgressValue, { color: textColor }]}>{viewAnime?.episode || 0}</Text>
+                        <TouchableOpacity onPress={() => updateProgress('episode', 1)}><Ionicons name="add-circle" size={28} color={accentColor} /></TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                </>
+              )}
 
-          </ScrollView>
+              <Text style={[styles.modalSectionTitle, { color: textColor }]}>Add to Category</Text>
+              {customCategories.length > 0 ? (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagScroll}>
+                  {customCategories.map(cat => { 
+                    const isActive = (viewAnime?.categories || []).includes(cat);
+                    return (
+                      <TouchableOpacity 
+                        key={cat} 
+                        style={[styles.tagPill, { backgroundColor: isActive ? accentColor : cardBg, borderColor: isActive ? accentColor : borderColor }]}
+                        onPress={() => toggleCategory(cat)}
+                      >
+                        <Text style={[styles.tagText, { color: isActive ? '#fff' : textColor }]}>{cat}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              ) : (
+                <Text style={{ color: '#888', fontStyle: 'italic', marginBottom: 25, marginTop: 5 }}>No custom categories added. You can add them from the top right menu!</Text>
+              )}
+
+              {viewAnime?.status !== 'Will Watch' && (
+                <View style={{ marginBottom: 40 }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 10 }}>
+                    <Text style={[styles.modalSectionTitle, { color: textColor, margin: 0 }]}>My Review</Text>
+                    {!isEditingComment ? (
+                      <TouchableOpacity onPress={() => setIsEditingComment(true)} style={{ padding: 5 }}>
+                        <Ionicons name="pencil" size={20} color={accentColor} />
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity onPress={saveComment} style={{ padding: 5 }}>
+                        <Text style={{ color: accentColor, fontWeight: 'bold', fontSize: 16 }}>Save</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  {isEditingComment ? (
+                    <TextInput 
+                      style={[styles.input, styles.textArea, { backgroundColor: cardBg, borderColor, color: textColor }]} 
+                      placeholder="Change your mind? Write a new review..." 
+                      placeholderTextColor="#888"
+                      multiline 
+                      value={tempComment}
+                      onChangeText={setTempComment}
+                      autoFocus
+                    />
+                  ) : (
+                    viewAnime?.comments ? (
+                      <View style={[styles.reviewBox, { backgroundColor: cardBg, borderColor }]}>
+                        <Text style={{ color: textColor, fontSize: 16, lineHeight: 24 }}>{viewAnime.comments}</Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity 
+                        style={[styles.reviewBox, { backgroundColor: cardBg, borderColor, justifyContent: 'center', alignItems: 'center', borderStyle: 'dashed' }]} 
+                        onPress={() => setIsEditingComment(true)}
+                      >
+                        <Text style={{ color: '#888', fontStyle: 'italic' }}>Tap here to add a review...</Text>
+                      </TouchableOpacity>
+                    )
+                  )}
+                </View>
+              )}
+
+            </ScrollView>
+          </KeyboardAvoidingView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* --- Moving Anime Modal --- */}
+      <Modal visible={!!movingAnime} animationType="slide" transparent={false} onRequestClose={() => setMovingAnime(null)}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: bgColor, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}>
+          <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+            
+            <View style={[styles.modalHeader, { borderBottomColor: borderColor }]}>
+              <TouchableOpacity onPress={() => setMovingAnime(null)} style={styles.closeBtn}><Ionicons name="close" size={28} color={textColor} /></TouchableOpacity>
+              <Text style={[styles.modalHeaderText, { color: textColor }]}>Update Status</Text>
+              <View style={{ width: 28 }} />
+            </View>
+
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+              
+              <Text style={{ color: '#888', fontSize: 14, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 5 }}>Moving Anime</Text>
+              <Text style={[styles.modalTitle, { color: textColor, textAlign: 'left', marginBottom: 25 }]}>{movingAnime?.title}</Text>
+
+              <Text style={[styles.formLabel, { color: textColor }]}>New Status</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 15 }}>
+                {allTabs.map((s) => (
+                  <TouchableOpacity 
+                    key={s} 
+                    style={[styles.statusButton, { backgroundColor: cardBg, borderColor }, moveStatus === s && { backgroundColor: accentColor, borderColor: accentColor }]}
+                    onPress={() => setMoveStatus(s)}
+                  >
+                    <Text style={[styles.statusText, moveStatus === s && styles.statusTextActive]}>{s}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+
+              {moveStatus !== 'Will Watch' && (
+                <>
+                  <Text style={[styles.formLabel, { color: textColor, marginTop: 10 }]}>Progress</Text>
+                  <View style={styles.progressContainer}>
+                    <View style={[styles.counterCard, { backgroundColor: cardBg, borderColor }]}>
+                      <Text style={[styles.counterLabel, { color: textColor }]}>Season</Text>
+                      <View style={styles.counterControls}>
+                        <TouchableOpacity onPress={() => setMoveSeason(Math.max(1, moveSeason - 1))}><Ionicons name="remove-circle" size={32} color="#888" /></TouchableOpacity>
+                        <Text style={[styles.counterValue, { color: textColor }]}>{moveSeason}</Text>
+                        <TouchableOpacity onPress={() => setMoveSeason(moveSeason + 1)}><Ionicons name="add-circle" size={32} color={accentColor} /></TouchableOpacity>
+                      </View>
+                    </View>
+
+                    <View style={[styles.counterCard, { backgroundColor: cardBg, borderColor }]}>
+                      <Text style={[styles.counterLabel, { color: textColor }]}>Episode</Text>
+                      <View style={styles.counterControls}>
+                        <TouchableOpacity onPress={() => setMoveEpisode(Math.max(0, moveEpisode - 1))}><Ionicons name="remove-circle" size={32} color="#888" /></TouchableOpacity>
+                        <Text style={[styles.counterValue, { color: textColor }]}>{moveEpisode}</Text>
+                        <TouchableOpacity onPress={() => setMoveEpisode(moveEpisode + 1)}><Ionicons name="add-circle" size={32} color={accentColor} /></TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+
+                  <Text style={[styles.formLabel, { color: textColor }]}>Rating</Text>
+                  <View style={styles.starsContainer}>
+                    {[1, 2, 3, 4, 5].map((star) => (
+                      <TouchableOpacity key={star} onPress={() => setMoveRating(star)}>
+                        <Ionicons name={star <= moveRating ? "star" : "star-outline"} size={36} color={star <= moveRating ? accentColor : "#555"} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
+                  <Text style={[styles.formLabel, { color: textColor }]}>Comments / Review</Text>
+                  <TextInput 
+                    style={[styles.input, styles.textArea, { backgroundColor: cardBg, borderColor, color: textColor }]} 
+                    placeholder="What did you think about it?" 
+                    placeholderTextColor="#888"
+                    multiline 
+                    value={moveComments}
+                    onChangeText={setMoveComments}
+                  />
+                </>
+              )}
+
+              <TouchableOpacity style={[styles.saveButton, { backgroundColor: accentColor }]} onPress={handleSaveMove}>
+                <Text style={styles.saveButtonText}>Save Changes</Text>
+              </TouchableOpacity>
+
+            </ScrollView>
+          </KeyboardAvoidingView>
         </SafeAreaView>
       </Modal>
 

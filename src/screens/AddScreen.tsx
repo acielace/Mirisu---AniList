@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Image, ActivityIndicator, Animated } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Image, ActivityIndicator, Animated, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useAppContext } from '../context/AppContext'; 
@@ -17,7 +17,7 @@ export default function AddScreen() {
   const [season, setSeason] = useState(1);
   const [episode, setEpisode] = useState(0);
   const [description, setDescription] = useState(''); 
-  const [fetchedGenres, setFetchedGenres] = useState<string[]>([]); // NEW: State to hold genres
+  const [fetchedGenres, setFetchedGenres] = useState<string[]>([]);
 
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
@@ -45,7 +45,6 @@ export default function AddScreen() {
       setShowDropdown(true);
       
       try {
-        // NEW: Added 'genres' to the AniList query!
         const query = `
           query ($search: String) {
             Page (page: 1, perPage: 5) {
@@ -81,7 +80,7 @@ export default function AddScreen() {
             title: anime.title.romaji,
             images: { jpg: { image_url: anime.coverImage.large, large_image_url: anime.coverImage.large } },
             synopsis: anime.description ? anime.description.replace(/<[^>]+>/g, '') : '',
-            genres: anime.genres || [] // NEW: Map the fetched genres
+            genres: anime.genres || [] 
           }));
           setSuggestions(mappedData);
         } else {
@@ -103,7 +102,7 @@ export default function AddScreen() {
     setTitle(selectedAnime.title_english || selectedAnime.title); 
     setImageUri(selectedAnime.images.jpg.large_image_url); 
     setDescription(selectedAnime.synopsis || ''); 
-    setFetchedGenres(selectedAnime.genres || []); // NEW: Save the genres when an item is selected
+    setFetchedGenres(selectedAnime.genres || []); 
     setShowDropdown(false); 
   };
 
@@ -138,7 +137,6 @@ export default function AddScreen() {
       return;
     }
     
-    // NEW: Passed the fetchedGenres array into the new AnimeEntry object
     const newAnime = {
       id: Date.now().toString(),
       title,
@@ -163,7 +161,7 @@ export default function AddScreen() {
     setSeason(1); 
     setEpisode(0); 
     setDescription(''); 
-    setFetchedGenres([]); // NEW: Clear genres for the next entry
+    setFetchedGenres([]); 
     setShowDropdown(false);
   };
 
@@ -173,7 +171,10 @@ export default function AddScreen() {
   const borderColor = theme === 'Dark' ? '#333' : '#ddd';
 
   return (
-    <View style={{ flex: 1, backgroundColor: bgColor }}>
+    <KeyboardAvoidingView 
+      style={{ flex: 1, backgroundColor: bgColor }} 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+    >
       <ScrollView style={styles.container} keyboardShouldPersistTaps="handled">
         
         <View style={styles.imageSection}>
@@ -199,7 +200,7 @@ export default function AddScreen() {
                 if (text.length === 0) {
                   setShowDropdown(false);
                   setSuggestions([]);
-                  setFetchedGenres([]); // Clear genres if user clears text manually
+                  setFetchedGenres([]);
                 }
               }}
             />
@@ -226,7 +227,6 @@ export default function AddScreen() {
                       <Text style={[styles.dropdownText, { color: textColor }]} numberOfLines={2}>
                         {anime.title_english || anime.title}
                       </Text>
-                      {/* Optional: Show a preview of the genres in the dropdown itself */}
                       {anime.genres && anime.genres.length > 0 && (
                         <Text style={{ fontSize: 11, color: '#888', marginTop: 2 }} numberOfLines={1}>
                           {anime.genres.join(', ')}
@@ -324,7 +324,7 @@ export default function AddScreen() {
         <Text style={styles.toastText}>{toastMessage}</Text>
       </Animated.View>
 
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

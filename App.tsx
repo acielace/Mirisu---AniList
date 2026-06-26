@@ -1,11 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Modal, StyleSheet, ScrollView, Animated, Image } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, StyleSheet, ScrollView, Animated, Image, Alert, Platform } from 'react-native';
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import ListScreen from './src/screens/ListScreen';
 import AddScreen from './src/screens/AddScreen';
 import RecentScreen from './src/screens/RecentScreen'; 
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import EditCategoriesScreen from './src/subscreens/EditCategoriesScreen';
 import MoreScreen from './src/subscreens/MoreScreen';
@@ -14,6 +15,8 @@ import SettingsScreen from './src/subscreens/SettingsScreen';
 import AboutScreen from './src/subscreens/AboutScreen';
 
 import { AppProvider, useAppContext } from './src/context/AppContext';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as FileSystem from 'expo-file-system';
 
 const Tab = createBottomTabNavigator();
 
@@ -205,7 +208,7 @@ function TabNavigator() {
   );
 }
 
-// NEW: Main App Wrapper that handles the Custom Splash Screen
+// Main App Wrapper handling Splash Screen
 function MainApp() {
   const { isDataLoaded, theme } = useAppContext();
   const [showSplash, setShowSplash] = useState(true);
@@ -214,33 +217,26 @@ function MainApp() {
   const bgColor = theme === 'Dark' ? '#000' : '#fff';
 
   useEffect(() => {
-    // When context finishes loading your data, start the countdown
     if (isDataLoaded) {
+      // Fade the splash screen out
       setTimeout(() => {
-        // Fade the splash screen out smoothly over 0.5 seconds
         Animated.timing(fadeAnim, {
           toValue: 0,
           duration: 500,
           useNativeDriver: true,
         }).start(() => {
-          // completely remove it from the screen after fade out
           setShowSplash(false);
         });
-      }, 2500); // Holds the logo on screen for 2.5 seconds
+      }, 2500);
     }
   }, [isDataLoaded]);
 
   return (
     <View style={{ flex: 1 }}>
-      {/* 
-        The Navigation Container mounts in the background immediately 
-        so it's fully ready by the time the splash screen fades away.
-      */}
       <NavigationContainer>
         <TabNavigator />
       </NavigationContainer>
 
-      {/* CUSTOM SPLASH SCREEN OVERLAY */}
       {showSplash && (
         <Animated.View 
           style={[
@@ -249,13 +245,13 @@ function MainApp() {
               backgroundColor: bgColor, 
               justifyContent: 'center', 
               alignItems: 'center', 
-              zIndex: 9999, // Ensure it sits on top of everything
+              zIndex: 9999,
               opacity: fadeAnim 
             }
           ]}
         >
           <Image 
-            source={require('./assets/Splash logo.png')} 
+            source={require('./assets/splash_logo.png')} 
             style={{ width: 140, height: 140, borderRadius: 40 }} 
             resizeMode="contain"
           />
@@ -267,9 +263,11 @@ function MainApp() {
 
 export default function App() {
   return (
-    <AppProvider>
-      <MainApp />
-    </AppProvider>
+    <SafeAreaProvider>
+      <AppProvider>
+        <MainApp />
+      </AppProvider>
+    </SafeAreaProvider>
   );
 }
 
