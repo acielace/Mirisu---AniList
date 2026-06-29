@@ -15,12 +15,8 @@
       "supportsTablet": true
     },
     "android": {
-      "package": "com.gabriel.anilist",
+      "package": "com.mirisu.anilist",
       "icon": "./assets/app_logo.png",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/app_logo.png",
-        "backgroundColor": "#000000"
-      },
       "predictiveBackGestureEnabled": false,
       "permissions": [
         "android.permission.READ_EXTERNAL_STORAGE",

@@ -349,7 +349,7 @@ const styles = StyleSheet.create({
   dropdownImage: { width: 40, height: 60, borderRadius: 4, marginRight: 10 },
   dropdownText: { flex: 1, fontSize: 14, fontWeight: 'bold' },
   textArea: { height: 100, textAlignVertical: 'top' },
-  statusButton: { paddingVertical: 12, paddingHorizontal: 20, borderWidth: 1, borderRadius: 8, marginRight: 10, alignItems: 'center' },
+  statusButton: { paddingVertical: 12, paddingHorizontal: 20, borderWidth: 1, borderRadius: 8, marginRight: 10, marginLeft: 13,alignItems: 'center' },
   statusText: { color: '#888', fontWeight: '600' },
   statusTextActive: { color: '#FFF' },
   starsContainer: { flexDirection: 'row', gap: 10, marginBottom: 15 },
