@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity, Modal, StyleSheet, ScrollView, Animated, Image, Alert, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, Modal, StyleSheet, ScrollView, Animated, Alert, Platform } from 'react-native';
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
+import * as SplashScreen from 'expo-splash-screen';
+
 import ListScreen from './src/screens/ListScreen';
 import AddScreen from './src/screens/AddScreen';
 import RecentScreen from './src/screens/RecentScreen'; 
@@ -17,6 +19,9 @@ import AboutScreen from './src/subscreens/AboutScreen';
 import { AppProvider, useAppContext } from './src/context/AppContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
+
+// Prevent the native splash screen from hiding automatically
+SplashScreen.preventAutoHideAsync();
 
 const Tab = createBottomTabNavigator();
 
@@ -208,26 +213,18 @@ function TabNavigator() {
   );
 }
 
-// Main App Wrapper handling Splash Screen
+// Cleaned up Main App Wrapper
 function MainApp() {
-  const { isDataLoaded, theme } = useAppContext();
-  const [showSplash, setShowSplash] = useState(true);
-  const fadeAnim = useRef(new Animated.Value(1)).current;
-
-  const bgColor = theme === 'Dark' ? '#000' : '#fff';
+  const { isDataLoaded } = useAppContext();
 
   useEffect(() => {
     if (isDataLoaded) {
-      // Fade the splash screen out
-      setTimeout(() => {
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 500,
-          useNativeDriver: true,
-        }).start(() => {
-          setShowSplash(false);
-        });
-      }, 2500);
+      // Hold the native splash screen for exactly 3 seconds, then dismiss
+      const timer = setTimeout(async () => {
+        await SplashScreen.hideAsync();
+      }, 3000);
+
+      return () => clearTimeout(timer);
     }
   }, [isDataLoaded]);
 
@@ -236,27 +233,6 @@ function MainApp() {
       <NavigationContainer>
         <TabNavigator />
       </NavigationContainer>
-
-      {showSplash && (
-        <Animated.View 
-          style={[
-            StyleSheet.absoluteFill, 
-            { 
-              backgroundColor: bgColor, 
-              justifyContent: 'center', 
-              alignItems: 'center', 
-              zIndex: 9999,
-              opacity: fadeAnim 
-            }
-          ]}
-        >
-          <Image 
-            source={require('./assets/splash_logo.png')} 
-            style={{ width: 140, height: 140, borderRadius: 40 }} 
-            resizeMode="contain"
-          />
-        </Animated.View>
-      )}
     </View>
   );
 }

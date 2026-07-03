@@ -8,38 +8,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAppContext } from '../context/AppContext';
 import { useNavigation } from '@react-navigation/native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AnimeEntry } from '../types';
 
-// ─── Expo SDK 52: import the whole namespace, then type the SAF sub-object ────
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import { StorageAccessFramework } from 'expo-file-system/legacy';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Sharing from 'expo-sharing';
-
-// ---------------------------------------------------------------------------
-// StorageAccessFramework type shim
-// expo-file-system ships SAF on the runtime object but the bundled .d.ts in
-// some SDK 52 releases doesn't re-export it from the top-level namespace.
-// Casting through `unknown` is the TS-safe alternative to @ts-ignore.
-// ---------------------------------------------------------------------------
-interface SAF {
-  requestDirectoryPermissionsAsync(): Promise<{ granted: boolean; directoryUri: string }>;
-  createFileAsync(dirUri: string, fileName: string, mimeType: string): Promise<string>;
-}
-
-interface FileSystemExtended {
-  documentDirectory: string | null;
-  cacheDirectory: string | null;
-  directories: {
-    document: string;
-    cache: string;
-  };
-  writeAsStringAsync(uri: string, contents: string): Promise<void>;
-  readAsStringAsync(uri: string): Promise<string>;
-  StorageAccessFramework: SAF;
-}
-
-const FS = FileSystem as unknown as FileSystemExtended;
-
-const StorageAccessFramework = FS.StorageAccessFramework;
 
 // ---------------------------------------------------------------------------
 
@@ -60,6 +34,10 @@ const HOURS_MAP: Record<FrequencyOption, number> = {
   'Weekly': 168,
 };
 
+// Fixed filename used for auto-backups so each one overwrites the previous.
+// Manual backups use a timestamped name so you can keep multiple snapshots.
+const AUTO_BACKUP_FILENAME = 'Mirisu_Backup_Auto.json';
+
 export default function DataStorageScreen() {
   const {
     theme, animeList, customCategories, hiddenCategories,
@@ -71,8 +49,7 @@ export default function DataStorageScreen() {
   const [freqModalVisible, setFreqModalVisible] = useState(false);
   const [lastBackupTime, setLastBackupTime] = useState<number | null>(null);
 
-  // ── Keep a stable ref to animeList so the AppState listener never
-  //    needs to be re-registered just because the list changed. ──────────────
+  // Stable refs so AppState listener never re-registers due to list changes
   const animeListRef = useRef(animeList);
   useEffect(() => { animeListRef.current = animeList; }, [animeList]);
 
@@ -82,21 +59,21 @@ export default function DataStorageScreen() {
   const hiddenCategoriesRef = useRef(hiddenCategories);
   useEffect(() => { hiddenCategoriesRef.current = hiddenCategories; }, [hiddenCategories]);
 
-  // ── Theme helpers ──────────────────────────────────────────────────────────
+  // ── Theme helpers ─────────────────────────────────────────────────────────
   const bgColor     = theme === 'Dark' ? '#18181A' : '#f8f9fa';
   const textColor   = theme === 'Dark' ? '#fff'    : '#000';
   const rowBgColor  = theme === 'Dark' ? '#212124' : '#fff';
   const borderColor = theme === 'Dark' ? '#333'    : '#ddd';
   const lighterBlue = '#4FA4FF';
 
-  // ── Load persisted last-backup time on mount ───────────────────────────────
+  // ── Load persisted last-backup time on mount ──────────────────────────────
   useEffect(() => {
     AsyncStorage.getItem('@anilist_last_backup').then(val => {
       if (val) setLastBackupTime(parseInt(val, 10));
     });
   }, []);
 
-  // ── Select storage folder (Android only) ──────────────────────────────────
+  // ── Select storage folder (Android only) ─────────────────────────────────
   const handleSelectStorage = async () => {
     if (Platform.OS !== 'android') {
       Alert.alert('Notice', 'Direct folder selection is only supported on Android.');
@@ -111,13 +88,13 @@ export default function DataStorageScreen() {
       } else {
         Alert.alert('Permission Denied', 'You must allow access to a folder to save backups there.');
       }
-        } catch (e) {
-          console.error('SAF folder picker error:', e);
-          Alert.alert('System Error', `Could not open folder picker: ${String(e)}`);
-        }
+    } catch (e) {
+      console.error('SAF folder picker error:', e);
+      Alert.alert('System Error', `Could not open folder picker: ${String(e)}`);
+    }
   };
 
-  // ── Create backup ──────────────────────────────────────────────────────────
+  // ── Create backup ─────────────────────────────────────────────────────────
   const handleCreateBackup = useCallback(async (isAuto = false) => {
     try {
       const backupData = JSON.stringify({
@@ -127,18 +104,40 @@ export default function DataStorageScreen() {
         timestamp: Date.now(),
       });
 
-      const now   = new Date();
+      // Auto-backups use a fixed filename so they overwrite the previous one.
+      // Manual backups use a timestamp so multiple snapshots can coexist.
+      const now     = new Date();
       const dateStr = now.toISOString().split('T')[0];
       const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
-      const fileName = `Mirisu_Backup_${dateStr}_${timeStr}.json`;
+      const fileName = isAuto
+        ? AUTO_BACKUP_FILENAME
+        : `Mirisu_Backup_${dateStr}_${timeStr}.json`;
 
-      // ── Path 1: Write directly to user-selected SAF folder ────────────────
+      // ── Path 1: Write to user-selected SAF folder ─────────────────────────
       if (Platform.OS === 'android' && storageUri) {
         try {
+          // For auto-backups: delete the previous auto-backup file first
+          // so we don't accumulate files in the folder.
+          if (isAuto) {
+            const lastAutoUri = await AsyncStorage.getItem('@mirisu_last_auto_backup_uri');
+            if (lastAutoUri) {
+              try {
+                await FileSystem.deleteAsync(lastAutoUri, { idempotent: true });
+              } catch {
+                // If delete fails, still proceed with creating the new file
+              }
+            }
+          }
+
           const newFileUri = await StorageAccessFramework.createFileAsync(
             storageUri, fileName, 'application/json',
           );
           await FileSystem.writeAsStringAsync(newFileUri, backupData);
+
+          // Persist the URI of this auto-backup so next time we can delete it
+          if (isAuto) {
+            await AsyncStorage.setItem('@mirisu_last_auto_backup_uri', newFileUri);
+          }
 
           const ts = Date.now();
           setLastBackupTime(ts);
@@ -147,21 +146,19 @@ export default function DataStorageScreen() {
           if (!isAuto) Alert.alert('Success', 'Backup saved to your selected folder!');
           return;
         } catch (err) {
-          // SAF write failed — fall through to share sheet
           console.warn('SAF write failed, falling back to share sheet.', err);
         }
       }
 
-      // ── Path 2: Auto-backups have no share UI, so bail out silently ───────
+      // ── Path 2: Auto-backups have no share UI — bail silently ────────────
       if (isAuto) return;
 
-      // ── Path 3: Share sheet fallback ──────────────────────────────────────
-      // documentDirectory is string | null in SDK 52 types; narrow it first.
-      const baseDir = FS.directories?.document ?? FS.directories?.cache;
+      // ── Path 3: Share sheet fallback (manual only) ────────────────────────
+      const baseDir = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
       if (!baseDir) throw new Error('File system not ready');
 
       const tempUri = `${baseDir}${fileName}`;
-      await FS.writeAsStringAsync(tempUri, backupData);
+      await FileSystem.writeAsStringAsync(tempUri, backupData);
 
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
@@ -172,13 +169,18 @@ export default function DataStorageScreen() {
       } else {
         Alert.alert('Error', 'Sharing is not available on this device.');
       }
-      } catch (error) {
-        if (!isAuto) Alert.alert('Backup Failed', `Error: ${String(error)}`);
-        console.error('Backup error:', error);
-      }   
-  }, [storageUri]); // storageUri is the only *external* dep; list data comes from refs
+    } catch (error) {
+      if (!isAuto) Alert.alert('Backup Failed', `Error: ${String(error)}`);
+      console.error('Backup error:', error);
+    }
+  }, [storageUri]);
 
-  // ── Restore backup ────────────────────────────────────────────────────────
+  // ── Restore backup (merge, not overwrite) ────────────────────────────────
+  // For animeList: entries in the backup that share an id with a current
+  // entry are skipped — current data is never overwritten. Entries whose id
+  // doesn't exist yet are appended, so nothing from the backup is lost.
+  // For customCategories and hiddenCategories: values are merged by union
+  // so no category from either side is dropped.
   const handleRestoreBackup = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -204,16 +206,39 @@ export default function DataStorageScreen() {
       }
 
       Alert.alert(
-        'Restore Backup',
-        'This will overwrite your current list and categories. Are you sure?',
+        'Merge Backup',
+        'Entries from the backup that do not exist in your current list will be added. Your existing entries will not be changed. Continue?',
         [
           { text: 'Cancel', style: 'cancel' },
           {
-            text: 'Restore', style: 'destructive', onPress: () => {
-              setAnimeList(parsedData.animeList);
-              if (parsedData.customCategories) setCustomCategories(parsedData.customCategories);
-              if (parsedData.hiddenCategories)  setHiddenCategories(parsedData.hiddenCategories);
-              Alert.alert('Success', 'Data restored successfully!');
+            text: 'Merge', onPress: () => {
+              // ── Merge animeList by id ───────────────────────────────────
+              const currentIds = new Set(animeListRef.current.map((e: AnimeEntry) => e.id));
+              const newEntries: AnimeEntry[] = (parsedData.animeList as AnimeEntry[])
+                .filter((e: AnimeEntry) => !currentIds.has(e.id));
+              const mergedAnimeList = [...animeListRef.current, ...newEntries];
+              setAnimeList(mergedAnimeList);
+
+              // ── Merge customCategories by union ─────────────────────────
+              if (parsedData.customCategories && Array.isArray(parsedData.customCategories)) {
+                const mergedCategories = Array.from(
+                  new Set([...customCategoriesRef.current, ...parsedData.customCategories])
+                );
+                setCustomCategories(mergedCategories);
+              }
+
+              // ── Merge hiddenCategories by union ─────────────────────────
+              if (parsedData.hiddenCategories && Array.isArray(parsedData.hiddenCategories)) {
+                const mergedHidden = Array.from(
+                  new Set([...hiddenCategoriesRef.current, ...parsedData.hiddenCategories])
+                );
+                setHiddenCategories(mergedHidden);
+              }
+
+              Alert.alert(
+                'Merge Complete',
+                `${newEntries.length} new ${newEntries.length === 1 ? 'entry' : 'entries'} added from backup.`,
+              );
             },
           },
         ],
@@ -231,8 +256,6 @@ export default function DataStorageScreen() {
   };
 
   // ── Auto-backup logic ─────────────────────────────────────────────────────
-  // Uses stable refs for list data → this effect only re-runs when the
-  // *scheduling* inputs change (frequency, storageUri, lastBackupTime).
   useEffect(() => {
     const checkAutoBackup = () => {
       if (backupFrequency === 'Off' || !storageUri) return;
@@ -308,7 +331,7 @@ export default function DataStorageScreen() {
           <View style={{ flex: 1 }}>
             <Text style={[styles.menuTitle, { color: textColor }]}>Restore Backup</Text>
             <Text style={[styles.menuSubtext, { color: '#888' }]}>
-              Restore data from a previously exported backup file.
+              Merge entries from a backup file into your current list.
             </Text>
           </View>
         </TouchableOpacity>
