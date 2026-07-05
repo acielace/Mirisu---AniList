@@ -68,7 +68,7 @@ export default function AboutScreen() {
       </View>
 
       <ScrollView contentContainerStyle={{ alignItems: 'center', padding: 20 }}>
-        <Image source={require('../../assets/luxion.png')} style={{ width: 120, height: 120, borderRadius: 30, marginBottom: 15 }} />
+        <Image source={require('../../assets/splash_logo.png')} style={{ width: 120, height: 120, borderRadius: 30, marginBottom: 15 }} />
         <Text style={{ color: textColor, fontSize: 28, fontWeight: 'bold' }}>Mirisu</Text>
         <TouchableOpacity activeOpacity={1} onPress={handleVersionPress} style={{ padding: 10 }}><Text style={{ color: '#888', fontSize: 16 }}>Version {CURRENT_VERSION}</Text></TouchableOpacity>
 

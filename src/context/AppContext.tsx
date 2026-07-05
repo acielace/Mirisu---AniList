@@ -16,7 +16,6 @@ interface AppContextType {
   isSearchActive: boolean; setIsSearchActive: (b: boolean) => void;
   searchQuery: string; setSearchQuery: (q: string) => void;
   
-  // NEW: State to track which genres are currently selected in the filter
   selectedGenres: string[]; setSelectedGenres: (genres: string[]) => void;
 
   customCategories: string[]; setCustomCategories: (cats: string[]) => void;
@@ -27,6 +26,10 @@ interface AppContextType {
   accentColor: string; setAccentColor: (color: string) => void;
   nsfwFilter: boolean; setNsfwFilter: (enabled: boolean) => void;
   isDataLoaded: boolean; 
+
+  // NEW FOLDER & EDIT STATES
+  isListEditMode: boolean; setIsListEditMode: (b: boolean) => void;
+  folders: string[]; setFolders: (folders: string[]) => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -43,7 +46,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [isSearchActive, setIsSearchActive] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
-  // NEW: Initialize the genre filter as an empty array (shows all by default)
   const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   
   const [customCategories, setCustomCategories] = useState<string[]>([]);
@@ -54,6 +56,10 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [backupFrequency, setBackupFrequency] = useState('Off'); 
   const [accentColor, setAccentColor] = useState('#4FA4FF'); 
   const [nsfwFilter, setNsfwFilter] = useState(false);
+
+  // NEW
+  const [isListEditMode, setIsListEditMode] = useState(false);
+  const [folders, setFolders] = useState<string[]>([]);
 
   const [isDataLoaded, setIsDataLoaded] = useState(false);
 
@@ -68,6 +74,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         const storedFreq = await AsyncStorage.getItem('@anilist_backupFreq'); 
         const storedAccent = await AsyncStorage.getItem('@anilist_accentColor');
         const storedNsfw = await AsyncStorage.getItem('@anilist_nsfw');
+        const storedFolders = await AsyncStorage.getItem('@anilist_folders'); // NEW
 
         if (storedAnime) setAnimeList(JSON.parse(storedAnime));
         if (storedCategories) setCustomCategories(JSON.parse(storedCategories));
@@ -77,6 +84,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         if (storedFreq) setBackupFrequency(storedFreq); 
         if (storedAccent) setAccentColor(storedAccent);
         if (storedNsfw) setNsfwFilter(JSON.parse(storedNsfw));
+        if (storedFolders) setFolders(JSON.parse(storedFolders)); // NEW
         
       } catch (error) {
         console.error("Failed to load data", error);
@@ -99,23 +107,25 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         await AsyncStorage.setItem('@anilist_backupFreq', backupFrequency); 
         await AsyncStorage.setItem('@anilist_accentColor', accentColor);
         await AsyncStorage.setItem('@anilist_nsfw', JSON.stringify(nsfwFilter));
+        await AsyncStorage.setItem('@anilist_folders', JSON.stringify(folders)); // NEW
       } catch (error) {
         console.error("Failed to save data", error);
       }
     };
     saveData();
-  }, [animeList, customCategories, hiddenCategories, themePref, storageUri, backupFrequency, accentColor, nsfwFilter, isDataLoaded]);
+  }, [animeList, customCategories, hiddenCategories, themePref, storageUri, backupFrequency, accentColor, nsfwFilter, folders, isDataLoaded]);
 
   return (
     <AppContext.Provider value={{ 
       themePref, setThemePref, theme, 
       displayMode, setDisplayMode, sortBy, setSortBy, isAscending, setIsAscending, 
       isSearchActive, setIsSearchActive, searchQuery, setSearchQuery,
-      selectedGenres, setSelectedGenres, // NEW: Provided the state to the rest of the app
+      selectedGenres, setSelectedGenres, 
       customCategories, setCustomCategories, hiddenCategories, setHiddenCategories,
       animeList, setAnimeList, storageUri, setStorageUri, 
       backupFrequency, setBackupFrequency, accentColor, setAccentColor,
-      nsfwFilter, setNsfwFilter, isDataLoaded
+      nsfwFilter, setNsfwFilter, isDataLoaded,
+      isListEditMode, setIsListEditMode, folders, setFolders // NEW
     }}>
       {children}
     </AppContext.Provider>

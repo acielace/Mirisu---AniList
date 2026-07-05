@@ -10,4 +10,5 @@ export interface AnimeEntry {
   episode: number;
   description?: string;
   genres?: string[]; // NEW: Added to store the genres fetched from AniList
+  folder?: string; // Add this line!
 }
