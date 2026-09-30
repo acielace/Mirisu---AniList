@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, useWindowDimensions, FlatList, Image, Modal, SafeAreaView, Animated, KeyboardAvoidingView, Platform, StatusBar, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, useWindowDimensions, FlatList, Image, Modal, Animated, KeyboardAvoidingView, Platform, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppContext } from '../context/AppContext';
 import { AnimeEntry } from '../types';
@@ -179,8 +180,9 @@ export default function ListScreen() {
       const ratingB = b.isFolder ? 0 : b.rating;
       result = ratingA - ratingB;
     } else if (sortBy === 'Date Added') {
-      const idA = a.isFolder ? Math.max(...a.items.map((i:any)=>parseInt(i.id))) : parseInt(a.id);
-      const idB = b.isFolder ? Math.max(...b.items.map((i:any)=>parseInt(i.id))) : parseInt(b.id);
+      // Use statusUpdatedAt (last status change) when available, falling back to id (creation time).
+      const idA = a.isFolder ? Math.max(...a.items.map((i:any)=>parseInt(i.statusUpdatedAt || i.id))) : parseInt(a.statusUpdatedAt || a.id);
+      const idB = b.isFolder ? Math.max(...b.items.map((i:any)=>parseInt(i.statusUpdatedAt || i.id))) : parseInt(b.statusUpdatedAt || b.id);
       result = idA - idB;
     }
     return isAscending ? result : -result;
@@ -285,6 +287,9 @@ export default function ListScreen() {
       comments: moveStatus === 'Will Watch' ? '' : moveComments,
       season: moveStatus === 'Will Watch' ? 1 : moveSeason,
       episode: moveStatus === 'Will Watch' ? 0 : moveEpisode,
+      // Stamp the actual moment this status change happened, so sorting/dates reflect
+      // "when it was watched/dropped" rather than the original creation date.
+      statusUpdatedAt: Date.now().toString(),
     };
     setAnimeList(animeList.map(a => a.id === movingAnime.id ? updatedAnime : a));
     setMovingAnime(null);
@@ -345,7 +350,7 @@ export default function ListScreen() {
               <Text style={[styles.textOnlyTitle, { color: textColor, flex: 1 }]} numberOfLines={1}>
                 {item.title}
               </Text>
-              {!item.isFolder && <Text style={{ color: '#888', fontSize: 11, marginLeft: 10 }}>{formatDate(item.id)}</Text>}
+              {!item.isFolder && <Text style={{ color: '#888', fontSize: 11, marginLeft: 10 }}>{formatDate(item.statusUpdatedAt || item.id)}</Text>}
             </View>
             <Text style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
               {item.isFolder ? `${item.items.length} Entries` : (item.status !== 'Will Watch' ? `S${item.season || 1} • Ep ${item.episode || 0}` : '')}
@@ -416,7 +421,7 @@ export default function ListScreen() {
 
         {isGrid && !item.isFolder && (
           <View style={{ position: 'absolute', top: 6, right: 6, backgroundColor: 'rgba(0,0,0,0.7)', paddingHorizontal: 6, paddingVertical: 3, borderRadius: 6, zIndex: 10 }}>
-            <Text style={{ color: '#fff', fontSize: 9, fontWeight: 'bold' }}>{formatDate(item.id)}</Text>
+            <Text style={{ color: '#fff', fontSize: 9, fontWeight: 'bold' }}>{formatDate(item.statusUpdatedAt || item.id)}</Text>
           </View>
         )}
         
@@ -424,7 +429,7 @@ export default function ListScreen() {
           {!isGrid ? (
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <Text style={[styles.listTitle, { color: textColor, flex: 1, marginRight: 10 }]} numberOfLines={1}>{item.title}</Text>
-              {!item.isFolder && <Text style={{ color: '#888', fontSize: 11 }}>{formatDate(item.id)}</Text>}
+              {!item.isFolder && <Text style={{ color: '#888', fontSize: 11 }}>{formatDate(item.statusUpdatedAt || item.id)}</Text>}
             </View>
           ) : (
             <Text style={[styles.gridTitle, { color: textColor }]} numberOfLines={2}>{item.title}</Text>
@@ -712,8 +717,8 @@ export default function ListScreen() {
 
       {/* --- Details Modal --- */}
       <Modal visible={!!viewAnime} animationType="slide" transparent={false} onRequestClose={() => setViewAnime(null)}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: bgColor, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}>
-          <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: bgColor }}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
             
             <View style={[styles.modalHeader, { borderBottomColor: borderColor }]}>
               <TouchableOpacity onPress={() => setViewAnime(null)} style={styles.closeBtn}><Ionicons name="chevron-down" size={28} color={textColor} /></TouchableOpacity>
@@ -721,7 +726,7 @@ export default function ListScreen() {
               <View style={{ width: 28 }} />
             </View>
 
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
               <View style={[styles.modalImageContainer, { backgroundColor: cardBg, borderColor }]}>
                 {viewAnime?.imageUri ? <Image source={{ uri: viewAnime.imageUri }} style={styles.modalImage} /> : <Ionicons name="image-outline" size={60} color="#888" />}
               </View>
@@ -881,8 +886,8 @@ export default function ListScreen() {
 
       {/* --- Moving Anime Modal --- */}
       <Modal visible={!!movingAnime} animationType="slide" transparent={false} onRequestClose={() => setMovingAnime(null)}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: bgColor, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}>
-          <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
+        <SafeAreaView style={{ flex: 1, backgroundColor: bgColor }}>
+          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
             
             <View style={[styles.modalHeader, { borderBottomColor: borderColor }]}>
               <TouchableOpacity onPress={() => setMovingAnime(null)} style={styles.closeBtn}><Ionicons name="close" size={28} color={textColor} /></TouchableOpacity>
@@ -890,13 +895,18 @@ export default function ListScreen() {
               <View style={{ width: 28 }} />
             </View>
 
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20, flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
               
               <Text style={{ color: '#888', fontSize: 14, fontWeight: 'bold', textTransform: 'uppercase', marginBottom: 5 }}>Moving Anime</Text>
               <Text style={[styles.modalTitle, { color: textColor, textAlign: 'left', marginBottom: 25 }]}>{movingAnime?.title}</Text>
 
               <Text style={[styles.formLabel, { color: textColor }]}>New Status</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 15 }}>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false} 
+                style={{ height: 50, marginBottom: 15 }}
+                contentContainerStyle={{ alignItems: 'center' }}
+              >
                 {allTabs.map((s) => (
                   <TouchableOpacity 
                     key={s} 

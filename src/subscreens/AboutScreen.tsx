@@ -1,12 +1,14 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Alert, Platform, StatusBar, ScrollView, Modal, Image, ActivityIndicator, Animated, Linking } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform, ScrollView, Modal, Image, ActivityIndicator, Animated, Linking } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { useAppContext } from '../context/AppContext';
+import { UPDATE_URL, TRUSTED_DOWNLOAD_PREFIX } from '../constants';
 import { useNavigation } from '@react-navigation/native';
 
-// UPDATE THIS: Use the "Raw" URL from your GitHub version.json filehttps://raw
-const UPDATE_URL = 'https://raw.githubusercontent.com/acielace/Mirisu---AniList/refs/heads/main/version.json';
-const CURRENT_VERSION = '1.0.0';
+// Single source of truth is app.json's "expo.version" field — no second hardcoded string to drift.
+const CURRENT_VERSION = Constants.expoConfig?.version ?? '0.0.0';
 
 export default function AboutScreen() {
   const { theme, accentColor } = useAppContext();
@@ -15,7 +17,7 @@ export default function AboutScreen() {
   const [whatsNewVisible, setWhatsNewVisible] = useState(false);
   const [updateModalVisible, setUpdateModalVisible] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
-  const [updateInfo, setUpdateInfo] = useState({ version: '', changelog: [] as string[], url: '' });
+  const [updateInfo, setUpdateInfo] = useState({ version: '', changelog: [] as string[], url: '', sha256: '' });
 
   const [easterEggVisible, setEasterEggVisible] = useState(false);
   const clickCount = useRef(0);
@@ -34,7 +36,22 @@ export default function AboutScreen() {
       const data = await response.json();
       
       if (data.latestVersion > CURRENT_VERSION) {
-        setUpdateInfo({ version: data.latestVersion, changelog: data.changelog, url: data.downloadUrl });
+        // Refuse to surface a download link that doesn't live under our own GitHub Releases.
+        if (typeof data.downloadUrl !== 'string' || !data.downloadUrl.startsWith(TRUSTED_DOWNLOAD_PREFIX)) {
+          console.log('Rejected update: untrusted downloadUrl:', data.downloadUrl);
+          Alert.alert(
+            'Update Blocked',
+            'The update link does not point to the official Mirisu releases page, so it was blocked for your safety.'
+          );
+          return;
+        }
+
+        setUpdateInfo({
+          version: String(data.latestVersion),
+          changelog: Array.isArray(data.changelog) ? data.changelog.map(String) : [],
+          url: data.downloadUrl,
+          sha256: typeof data.sha256 === 'string' ? data.sha256 : '',
+        });
         setUpdateModalVisible(true);
       } else {
         Alert.alert("Up to Date", "Mirisu is running the latest version.");
@@ -61,7 +78,7 @@ export default function AboutScreen() {
   const spin = spinValue.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: bgColor, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: bgColor }}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.navigate('More')} style={{ padding: 10 }}><Ionicons name="arrow-back" size={26} color={textColor} /></TouchableOpacity>
         <Text style={[styles.headerText, { color: textColor }]}>About</Text>
@@ -94,6 +111,16 @@ export default function AboutScreen() {
             <Text style={[styles.sectionTitle, { color: textColor }]}>Update v{updateInfo.version} Available!</Text>
             <Text style={{ color: textColor, marginBottom: 10 }}>What's new:</Text>
             {updateInfo.changelog.map((item, i) => <Text key={i} style={{ color: '#888' }}>• {item}</Text>)}
+
+            {updateInfo.sha256 ? (
+              <View style={{ marginTop: 15 }}>
+                <Text style={{ color: textColor, fontWeight: 'bold', marginBottom: 4 }}>SHA-256 checksum</Text>
+                <Text selectable style={{ color: '#888', fontSize: 11 }}>{updateInfo.sha256}</Text>
+                <Text style={{ color: '#888', fontSize: 11, marginTop: 4 }}>
+                  Optional: compare this against the downloaded file with any SHA-256 checker before installing.
+                </Text>
+              </View>
+            ) : null}
             
             <View style={{ flexDirection: 'row', marginTop: 20, gap: 10 }}>
               <TouchableOpacity style={styles.modalBtn} onPress={() => setUpdateModalVisible(false)}><Text style={{ color: '#888' }}>Later</Text></TouchableOpacity>

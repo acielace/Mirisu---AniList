@@ -16,6 +16,7 @@ import DataStorageScreen from './src/subscreens/DataStorageScreen';
 import SettingsScreen from './src/subscreens/SettingsScreen';
 import AboutScreen from './src/subscreens/AboutScreen';
 
+import ErrorBoundary from './src/components/ErrorBoundary';
 import { AppProvider, useAppContext } from './src/context/AppContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StorageAccessFramework } from 'expo-file-system/legacy';
@@ -235,8 +236,8 @@ function FirstLaunchModal() {
     try {
       const permissions = await StorageAccessFramework.requestDirectoryPermissionsAsync();
       if (permissions.granted) {
+        // AppContext persists this under @anilist_storageUri.
         setStorageUri(permissions.directoryUri);
-        await AsyncStorage.setItem('@mirisu_storage_uri', permissions.directoryUri);
       }
     } catch (e) {
       console.error('First launch SAF error:', e);
@@ -318,11 +319,13 @@ function MainApp() {
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <AppProvider>
-        <MainApp />
-      </AppProvider>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <AppProvider>
+          <MainApp />
+        </AppProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
 

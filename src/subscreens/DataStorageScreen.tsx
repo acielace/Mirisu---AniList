@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
-  View, Text, StyleSheet, SafeAreaView, TouchableOpacity,
-  Alert, Platform, StatusBar, Modal, ScrollView, AppState,
-  AppStateStatus,
+  View, Text, StyleSheet, TouchableOpacity,
+  Alert, Platform, Modal, ScrollView, AppState,
+  AppStateStatus, TextInput,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppContext } from '../context/AppContext';
 import { useNavigation } from '@react-navigation/native';
@@ -34,8 +35,6 @@ const HOURS_MAP: Record<FrequencyOption, number> = {
   'Weekly': 168,
 };
 
-// Fixed filename used for auto-backups so each one overwrites the previous.
-// Manual backups use a timestamped name so you can keep multiple snapshots.
 const AUTO_BACKUP_FILENAME = 'Mirisu_Backup_Auto.json';
 
 export default function DataStorageScreen() {
@@ -46,8 +45,19 @@ export default function DataStorageScreen() {
   } = useAppContext();
 
   const navigation = useNavigation<any>();
-  const [freqModalVisible, setFreqModalVisible] = useState(false);
-  const [lastBackupTime, setLastBackupTime] = useState<number | null>(null);
+  const [freqModalVisible, setFreqModalVisible]     = useState(false);
+  const [saveModalVisible, setSaveModalVisible]     = useState(false);
+  const [lastBackupTime, setLastBackupTime]         = useState<number | null>(null);
+
+  // Default filename shown in the rename input
+  const buildDefaultFileName = () => {
+    const now     = new Date();
+    const dateStr = now.toISOString().split('T')[0];
+    const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+    return `Mirisu_Backup_${dateStr}_${timeStr}`;
+  };
+
+  const [backupFileName, setBackupFileName] = useState(buildDefaultFileName);
 
   // Stable refs so AppState listener never re-registers due to list changes
   const animeListRef = useRef(animeList);
@@ -60,11 +70,12 @@ export default function DataStorageScreen() {
   useEffect(() => { hiddenCategoriesRef.current = hiddenCategories; }, [hiddenCategories]);
 
   // ── Theme helpers ─────────────────────────────────────────────────────────
-  const bgColor     = theme === 'Dark' ? '#18181A' : '#f8f9fa';
-  const textColor   = theme === 'Dark' ? '#fff'    : '#000';
-  const rowBgColor  = theme === 'Dark' ? '#212124' : '#fff';
-  const borderColor = theme === 'Dark' ? '#333'    : '#ddd';
-  const lighterBlue = '#4FA4FF';
+  const bgColor      = theme === 'Dark' ? '#18181A' : '#f8f9fa';
+  const textColor    = theme === 'Dark' ? '#fff'    : '#000';
+  const rowBgColor   = theme === 'Dark' ? '#212124' : '#fff';
+  const borderColor  = theme === 'Dark' ? '#333'    : '#ddd';
+  const inputBgColor = theme === 'Dark' ? '#2a2a2e' : '#f0f0f0';
+  const lighterBlue  = '#4FA4FF';
 
   // ── Load persisted last-backup time on mount ──────────────────────────────
   useEffect(() => {
@@ -82,8 +93,8 @@ export default function DataStorageScreen() {
     try {
       const permissions = await StorageAccessFramework.requestDirectoryPermissionsAsync();
       if (permissions.granted) {
+        // AppContext persists this under @anilist_storageUri.
         setStorageUri(permissions.directoryUri);
-        await AsyncStorage.setItem('@mirisu_storage_uri', permissions.directoryUri);
         Alert.alert('Storage Set', 'Backups will now be saved to this folder.');
       } else {
         Alert.alert('Permission Denied', 'You must allow access to a folder to save backups there.');
@@ -94,66 +105,60 @@ export default function DataStorageScreen() {
     }
   };
 
-  // ── Create backup ─────────────────────────────────────────────────────────
-  const handleCreateBackup = useCallback(async (isAuto = false) => {
-    try {
-      const backupData = JSON.stringify({
-        animeList: animeListRef.current,
-        customCategories: customCategoriesRef.current,
-        hiddenCategories: hiddenCategoriesRef.current,
-        timestamp: Date.now(),
-      });
+  // ── Open the Save Backup modal (manual only) ──────────────────────────────
+  const handleOpenSaveModal = () => {
+    setBackupFileName(buildDefaultFileName());
+    setSaveModalVisible(true);
+  };
 
-      // Auto-backups use a fixed filename so they overwrite the previous one.
-      // Manual backups use a timestamp so multiple snapshots can coexist.
-      const now     = new Date();
-      const dateStr = now.toISOString().split('T')[0];
-      const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, '-');
-      const fileName = isAuto
-        ? AUTO_BACKUP_FILENAME
-        : `Mirisu_Backup_${dateStr}_${timeStr}.json`;
+  // ── Execute the actual save after user confirms name + folder ─────────────
+  const handleConfirmSave = async () => {
+    setSaveModalVisible(false);
 
-      // ── Path 1: Write to user-selected SAF folder ─────────────────────────
-      if (Platform.OS === 'android' && storageUri) {
-        try {
-          // For auto-backups: delete the previous auto-backup file first
-          // so we don't accumulate files in the folder.
-          if (isAuto) {
-            const lastAutoUri = await AsyncStorage.getItem('@mirisu_last_auto_backup_uri');
-            if (lastAutoUri) {
-              try {
-                await FileSystem.deleteAsync(lastAutoUri, { idempotent: true });
-              } catch {
-                // If delete fails, still proceed with creating the new file
-              }
-            }
-          }
+    // Sanitise filename: strip illegal characters, trim whitespace
+    const rawName  = backupFileName.trim().replace(/[\\/:*?"<>|]/g, '_');
+    const fileName = (rawName.length > 0 ? rawName : buildDefaultFileName()) + '.json';
 
-          const newFileUri = await StorageAccessFramework.createFileAsync(
-            storageUri, fileName, 'application/json',
-          );
-          await FileSystem.writeAsStringAsync(newFileUri, backupData);
+    const backupData = JSON.stringify({
+      animeList:        animeListRef.current,
+      customCategories: customCategoriesRef.current,
+      hiddenCategories: hiddenCategoriesRef.current,
+      timestamp:        Date.now(),
+    });
 
-          // Persist the URI of this auto-backup so next time we can delete it
-          if (isAuto) {
-            await AsyncStorage.setItem('@mirisu_last_auto_backup_uri', newFileUri);
-          }
-
-          const ts = Date.now();
-          setLastBackupTime(ts);
-          await AsyncStorage.setItem('@anilist_last_backup', ts.toString());
-
-          if (!isAuto) Alert.alert('Success', 'Backup saved to your selected folder!');
+    if (Platform.OS === 'android') {
+      // Always open the folder picker so the user chooses where to save
+      try {
+        const permissions = await StorageAccessFramework.requestDirectoryPermissionsAsync();
+        if (!permissions.granted) {
+          // User cancelled the folder picker — fall through to share sheet
+          await _shareBackup(backupData, fileName);
           return;
-        } catch (err) {
-          console.warn('SAF write failed, falling back to share sheet.', err);
         }
+
+        const newFileUri = await StorageAccessFramework.createFileAsync(
+          permissions.directoryUri, fileName, 'application/json',
+        );
+        await FileSystem.writeAsStringAsync(newFileUri, backupData);
+
+        const ts = Date.now();
+        setLastBackupTime(ts);
+        await AsyncStorage.setItem('@anilist_last_backup', ts.toString());
+
+        Alert.alert('Saved', `"${fileName}" saved successfully.`);
+      } catch (err) {
+        console.warn('SAF save failed, falling back to share sheet.', err);
+        await _shareBackup(backupData, fileName);
       }
+    } else {
+      // iOS / other: share sheet only
+      await _shareBackup(backupData, fileName);
+    }
+  };
 
-      // ── Path 2: Auto-backups have no share UI — bail silently ────────────
-      if (isAuto) return;
-
-      // ── Path 3: Share sheet fallback (manual only) ────────────────────────
+  // ── Share sheet helper (fallback for non-Android or SAF failure) ──────────
+  const _shareBackup = async (backupData: string, fileName: string) => {
+    try {
       const baseDir = FileSystem.documentDirectory ?? FileSystem.cacheDirectory;
       if (!baseDir) throw new Error('File system not ready');
 
@@ -163,24 +168,59 @@ export default function DataStorageScreen() {
       const isAvailable = await Sharing.isAvailableAsync();
       if (isAvailable) {
         await Sharing.shareAsync(tempUri, {
-          mimeType: 'application/json',
+          mimeType:    'application/json',
           dialogTitle: 'Save Backup File',
         });
       } else {
         Alert.alert('Error', 'Sharing is not available on this device.');
       }
     } catch (error) {
-      if (!isAuto) Alert.alert('Backup Failed', `Error: ${String(error)}`);
-      console.error('Backup error:', error);
+      Alert.alert('Backup Failed', `Error: ${String(error)}`);
+      console.error('Share backup error:', error);
+    }
+  };
+
+  // ── Auto-backup (uses pre-set storageUri, no folder picker) ──────────────
+  const handleAutoBackup = useCallback(async () => {
+    try {
+      const backupData = JSON.stringify({
+        animeList:        animeListRef.current,
+        customCategories: customCategoriesRef.current,
+        hiddenCategories: hiddenCategoriesRef.current,
+        timestamp:        Date.now(),
+      });
+
+      if (Platform.OS === 'android' && storageUri) {
+        try {
+          // Delete the previous auto-backup file to avoid accumulation
+          const lastAutoUri = await AsyncStorage.getItem('@mirisu_last_auto_backup_uri');
+          if (lastAutoUri) {
+            try {
+              await FileSystem.deleteAsync(lastAutoUri, { idempotent: true });
+            } catch {
+              // If delete fails, continue anyway
+            }
+          }
+
+          const newFileUri = await StorageAccessFramework.createFileAsync(
+            storageUri, AUTO_BACKUP_FILENAME, 'application/json',
+          );
+          await FileSystem.writeAsStringAsync(newFileUri, backupData);
+          await AsyncStorage.setItem('@mirisu_last_auto_backup_uri', newFileUri);
+
+          const ts = Date.now();
+          setLastBackupTime(ts);
+          await AsyncStorage.setItem('@anilist_last_backup', ts.toString());
+        } catch (err) {
+          console.warn('Auto-backup SAF write failed.', err);
+        }
+      }
+    } catch (error) {
+      console.error('Auto-backup error:', error);
     }
   }, [storageUri]);
 
   // ── Restore backup (merge, not overwrite) ────────────────────────────────
-  // For animeList: entries in the backup that share an id with a current
-  // entry are skipped — current data is never overwritten. Entries whose id
-  // doesn't exist yet are appended, so nothing from the backup is lost.
-  // For customCategories and hiddenCategories: values are merged by union
-  // so no category from either side is dropped.
   const handleRestoreBackup = async () => {
     try {
       const result = await DocumentPicker.getDocumentAsync({
@@ -212,27 +252,24 @@ export default function DataStorageScreen() {
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Merge', onPress: () => {
-              // ── Merge animeList by id ───────────────────────────────────
-              const currentIds = new Set(animeListRef.current.map((e: AnimeEntry) => e.id));
+              // Merge animeList by id
+              const currentIds  = new Set(animeListRef.current.map((e: AnimeEntry) => e.id));
               const newEntries: AnimeEntry[] = (parsedData.animeList as AnimeEntry[])
                 .filter((e: AnimeEntry) => !currentIds.has(e.id));
-              const mergedAnimeList = [...animeListRef.current, ...newEntries];
-              setAnimeList(mergedAnimeList);
+              setAnimeList([...animeListRef.current, ...newEntries]);
 
-              // ── Merge customCategories by union ─────────────────────────
+              // Merge customCategories by union
               if (parsedData.customCategories && Array.isArray(parsedData.customCategories)) {
-                const mergedCategories = Array.from(
+                setCustomCategories(Array.from(
                   new Set([...customCategoriesRef.current, ...parsedData.customCategories])
-                );
-                setCustomCategories(mergedCategories);
+                ));
               }
 
-              // ── Merge hiddenCategories by union ─────────────────────────
+              // Merge hiddenCategories by union
               if (parsedData.hiddenCategories && Array.isArray(parsedData.hiddenCategories)) {
-                const mergedHidden = Array.from(
+                setHiddenCategories(Array.from(
                   new Set([...hiddenCategoriesRef.current, ...parsedData.hiddenCategories])
-                );
-                setHiddenCategories(mergedHidden);
+                ));
               }
 
               Alert.alert(
@@ -248,14 +285,13 @@ export default function DataStorageScreen() {
     }
   };
 
-  // ── Set backup frequency + persist it ────────────────────────────────────
-  const handleSetFrequency = async (option: string) => {
+  // ── Set backup frequency (AppContext persists it under @anilist_backupFreq) ─
+  const handleSetFrequency = (option: string) => {
     setBackupFrequency(option);
     setFreqModalVisible(false);
-    await AsyncStorage.setItem('@mirisu_backup_frequency', option);
   };
 
-  // ── Auto-backup logic ─────────────────────────────────────────────────────
+  // ── Auto-backup scheduling ────────────────────────────────────────────────
   useEffect(() => {
     const checkAutoBackup = () => {
       if (backupFrequency === 'Off' || !storageUri) return;
@@ -264,9 +300,7 @@ export default function DataStorageScreen() {
       if (thresholdHours === Infinity) return;
 
       const hoursPassed = (Date.now() - (lastBackupTime ?? 0)) / (1000 * 60 * 60);
-      if (hoursPassed >= thresholdHours) {
-        handleCreateBackup(true);
-      }
+      if (hoursPassed >= thresholdHours) handleAutoBackup();
     };
 
     checkAutoBackup();
@@ -276,7 +310,7 @@ export default function DataStorageScreen() {
     });
 
     return () => subscription.remove();
-  }, [backupFrequency, storageUri, lastBackupTime, handleCreateBackup]);
+  }, [backupFrequency, storageUri, lastBackupTime, handleAutoBackup]);
 
   // ── Display helpers ───────────────────────────────────────────────────────
   const displayStorageUri = storageUri
@@ -290,7 +324,7 @@ export default function DataStorageScreen() {
       : `${backupFrequency} (Requires Storage Location)`;
 
   return (
-    <SafeAreaView style={[styles.root, { backgroundColor: bgColor, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }]}>
+    <SafeAreaView style={[styles.root, { backgroundColor: bgColor }]}>
 
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.navigate('More')} style={{ padding: 10 }}>
@@ -314,12 +348,12 @@ export default function DataStorageScreen() {
 
         <TouchableOpacity
           style={[styles.menuRow, { backgroundColor: rowBgColor, borderColor }]}
-          onPress={() => handleCreateBackup(false)}
+          onPress={handleOpenSaveModal}
         >
           <View style={{ flex: 1 }}>
             <Text style={[styles.menuTitle, { color: textColor }]}>Create Backup</Text>
             <Text style={[styles.menuSubtext, { color: '#888' }]}>
-              Export your current data to save it securely.
+              Choose a name and folder to save your backup.
             </Text>
           </View>
         </TouchableOpacity>
@@ -348,6 +382,63 @@ export default function DataStorageScreen() {
 
       </ScrollView>
 
+      {/* ── Save Backup Modal ─────────────────────────────────────────────── */}
+      <Modal
+        animationType="fade"
+        transparent
+        visible={saveModalVisible}
+        onRequestClose={() => setSaveModalVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setSaveModalVisible(false)}
+        >
+          <View
+            style={[styles.modalContent, { backgroundColor: rowBgColor, borderColor }]}
+            // Prevent taps inside the card from closing the modal
+            onStartShouldSetResponder={() => true}
+          >
+            <Text style={[styles.modalTitle, { color: textColor }]}>Save Backup</Text>
+
+            <Text style={[styles.inputLabel, { color: '#888' }]}>File name</Text>
+            <View style={[styles.inputRow, { backgroundColor: inputBgColor, borderColor }]}>
+              <TextInput
+                style={[styles.textInput, { color: textColor }]}
+                value={backupFileName}
+                onChangeText={setBackupFileName}
+                placeholder="Enter file name"
+                placeholderTextColor="#666"
+                autoCorrect={false}
+                autoCapitalize="none"
+              />
+              <Text style={[styles.inputSuffix, { color: '#666' }]}>.json</Text>
+            </View>
+
+            <Text style={[styles.inputHint, { color: '#666' }]}>
+              Tap Save to choose where on your device to store this file.
+            </Text>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.cancelModalBtn, { borderColor }]}
+                onPress={() => setSaveModalVisible(false)}
+              >
+                <Text style={[styles.modalBtnText, { color: '#888' }]}>Cancel</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.modalBtn, styles.saveModalBtn, { backgroundColor: lighterBlue }]}
+                onPress={handleConfirmSave}
+              >
+                <Text style={[styles.modalBtnText, { color: '#fff' }]}>Save</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* ── Frequency Modal ───────────────────────────────────────────────── */}
       <Modal
         animationType="fade"
         transparent
@@ -422,6 +513,28 @@ const styles = StyleSheet.create({
     padding: 20, borderWidth: 1, maxHeight: '70%',
   },
   modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 20 },
+
+  // Save modal inputs
+  inputLabel: { fontSize: 13, marginBottom: 6 },
+  inputRow: {
+    flexDirection: 'row', alignItems: 'center',
+    borderWidth: 1, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 10,
+    marginBottom: 10,
+  },
+  textInput: { flex: 1, fontSize: 15 },
+  inputSuffix: { fontSize: 14, marginLeft: 4 },
+  inputHint: { fontSize: 12, lineHeight: 18, marginBottom: 20 },
+  modalButtons: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10 },
+  modalBtn: {
+    paddingVertical: 10, paddingHorizontal: 20,
+    borderRadius: 10,
+  },
+  cancelModalBtn: { borderWidth: 1 },
+  saveModalBtn: {},
+  modalBtnText: { fontSize: 15, fontWeight: '600' },
+
+  // Frequency modal
   radioRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12 },
   radioText: { fontSize: 16, marginLeft: 15 },
   cancelBtn: { alignSelf: 'flex-end', marginTop: 15 },

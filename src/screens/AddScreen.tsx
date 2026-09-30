@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Image, ActivityIndicator, Animated, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, StyleSheet, ScrollView, Alert, Image, ActivityIndicator, Animated, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
-import { useAppContext } from '../context/AppContext'; 
+import { useAppContext } from '../context/AppContext';
+import { ANILIST_URL, KITSU_ANIME_URL } from '../constants'; 
 
 export default function AddScreen() {
   const { animeList, setAnimeList, theme, accentColor, nsfwFilter, customCategories = [] } = useAppContext(); 
@@ -23,6 +24,8 @@ export default function AddScreen() {
   const [suggestions, setSuggestions] = useState<any[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [selectedFromApi, setSelectedFromApi] = useState(false); 
+  const [apiUnavailable, setApiUnavailable] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   
   const [showDropdown, setShowDropdown] = useState(false); 
   const [statusDropdownVisible, setStatusDropdownVisible] = useState(false);
@@ -49,59 +52,134 @@ export default function AddScreen() {
     const delayDebounceFn = setTimeout(async () => {
       setIsSearching(true);
       setShowDropdown(true);
-      
-      try {
-        const query = `
-          query ($search: String) {
-            Page (page: 1, perPage: 5) {
-              media (search: $search, type: ANIME${nsfwFilter ? ', isAdult: false' : ''}) {
-                id
-                title { romaji english }
-                coverImage { large }
-                description(asHtml: false)
-                genres
+
+      // Primary source. Returns ok:true only on a genuine successful AniList response
+      // (including a real zero-result search) — ok:false means AniList itself failed,
+      // which is the only condition that should trigger the fallback below.
+      const fetchFromAniList = async (): Promise<{ ok: boolean; data: any[] }> => {
+        try {
+          const query = `
+            query ($search: String) {
+              Page (page: 1, perPage: 15) {
+                media (search: $search, type: ANIME${nsfwFilter ? ', isAdult: false' : ''}) {
+                  id
+                  title { romaji english }
+                  coverImage { large }
+                  description(asHtml: false)
+                  genres
+                }
               }
             }
+          `;
+
+          const response = await fetch(ANILIST_URL, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+            body: JSON.stringify({
+              query: query,
+              variables: { search: title.trim() }
+            })
+          });
+
+          const json = await response.json();
+
+          if (json.errors) {
+            // AniList's own API returns this shape when their servers are in a degraded/disabled
+            // state (documented behavior, not something wrong with our request).
+            console.log("AniList API error:", json.errors[0]?.message || json.errors);
+            return { ok: false, data: [] };
           }
-        `;
 
-        const response = await fetch('https://graphql.anilist.co', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify({
-            query: query,
-            variables: { search: title.trim() }
-          })
-        });
+          if (json.data && json.data.Page && Array.isArray(json.data.Page.media)) {
+            const mappedData = json.data.Page.media.map((anime: any) => ({
+              mal_id: anime.id,
+              title_english: anime.title.english || anime.title.romaji,
+              title: anime.title.romaji,
+              images: { jpg: { image_url: anime.coverImage.large, large_image_url: anime.coverImage.large } },
+              synopsis: anime.description ? anime.description.replace(/<[^>]+>/g, '') : '',
+              genres: anime.genres || []
+            }));
+            return { ok: true, data: mappedData };
+          }
 
-        const json = await response.json();
-        
-        if (json.data && json.data.Page && json.data.Page.media) {
-          const mappedData = json.data.Page.media.map((anime: any) => ({
-            mal_id: anime.id,
-            title_english: anime.title.english || anime.title.romaji,
-            title: anime.title.romaji,
-            images: { jpg: { image_url: anime.coverImage.large, large_image_url: anime.coverImage.large } },
-            synopsis: anime.description ? anime.description.replace(/<[^>]+>/g, '') : '',
-            genres: anime.genres || [] 
-          }));
-          setSuggestions(mappedData);
+          return { ok: false, data: [] };
+        } catch (error) {
+          console.log("AniList network error:", error);
+          return { ok: false, data: [] };
+        }
+      };
+
+      // Fallback source, only ever called when AniList itself failed. Kitsu has its own
+      // hosted database (unlike Jikan, which scrapes MyAnimeList's live site in real time),
+      // so it isn't subject to the same upstream-scraping failures we just hit.
+      const fetchFromKitsu = async (): Promise<{ ok: boolean; data: any[] }> => {
+        try {
+          const kitsuUrl = `${KITSU_ANIME_URL}?filter[text]=${encodeURIComponent(title.trim())}&page[limit]=15`;
+          const kitsuResponse = await fetch(kitsuUrl, {
+            headers: { 'Accept': 'application/vnd.api+json' }
+          });
+          const kitsuJson = await kitsuResponse.json();
+
+          if (kitsuJson.data && Array.isArray(kitsuJson.data)) {
+            const filtered = nsfwFilter
+              ? kitsuJson.data.filter((anime: any) => !anime.attributes?.nsfw)
+              : kitsuJson.data;
+
+            const mappedData = filtered.map((anime: any) => {
+              const attrs = anime.attributes || {};
+              return {
+                mal_id: anime.id,
+                title_english: attrs.titles?.en || attrs.canonicalTitle,
+                title: attrs.canonicalTitle,
+                images: {
+                  jpg: {
+                    image_url: attrs.posterImage?.medium,
+                    large_image_url: attrs.posterImage?.large
+                  }
+                },
+                synopsis: attrs.synopsis || '',
+                // Kitsu only returns genres via a separate related-resource lookup (JSON:API
+                // "include"), which isn't worth the added complexity for a fallback path that's
+                // rarely used — leaving this empty just means the genre pills won't show for
+                // anime picked while AniList is down, not a functional problem.
+                genres: []
+              };
+            });
+            return { ok: true, data: mappedData };
+          }
+
+          console.log("Kitsu fallback returned an unexpected response shape:", kitsuJson);
+          return { ok: false, data: [] };
+        } catch (error) {
+          console.log("Kitsu fallback network error:", error);
+          return { ok: false, data: [] };
+        }
+      };
+
+      const aniListResult = await fetchFromAniList();
+
+      if (aniListResult.ok) {
+        setSuggestions(aniListResult.data);
+        setApiUnavailable(false);
+      } else {
+        const kitsuResult = await fetchFromKitsu();
+        if (kitsuResult.ok) {
+          setSuggestions(kitsuResult.data);
+          setApiUnavailable(false);
         } else {
           setSuggestions([]);
+          setApiUnavailable(true);
         }
-      } catch (error) {
-        console.log("Error fetching anime:", error);
-        setSuggestions([]);
-      } finally {
-        setIsSearching(false);
       }
+
+      setIsSearching(false);
     }, 600); 
 
     return () => clearTimeout(delayDebounceFn);
-  }, [title, nsfwFilter]); 
+  }, [title, nsfwFilter, retryCount]); 
 
   const handleSelectAnime = (selectedAnime: any) => {
     skipSearch.current = true;
@@ -138,16 +216,7 @@ export default function AddScreen() {
     });
   };
 
-  const handleSave = () => {
-    if (!title.trim()) {
-      Alert.alert('Hold up!', 'Please enter an anime title.');
-      return;
-    }
-    if (!status) {
-      Alert.alert('Hold up!', 'Please select a Status (Watched, Will Watch, or Dropped).');
-      return;
-    }
-    
+  const performSave = () => {
     const savedCategories = subCategory ? [status, subCategory] : [status];
 
     const newAnime = {
@@ -183,6 +252,37 @@ export default function AddScreen() {
     setSelectedFromApi(false);
   };
 
+  const handleSave = () => {
+    if (!title.trim()) {
+      Alert.alert('Hold up!', 'Please enter an anime title.');
+      return;
+    }
+    if (!status) {
+      Alert.alert('Hold up!', 'Please select a Status (Watched, Will Watch, or Dropped).');
+      return;
+    }
+
+    // Exact-match check only (trimmed, case-insensitive) — deliberately not fuzzy, so e.g.
+    // "Naruto" and "Naruto Shippuden" are treated as different entries, not duplicates.
+    const isDuplicate = animeList.some(
+      (a) => a.title.trim().toLowerCase() === title.trim().toLowerCase()
+    );
+
+    if (isDuplicate) {
+      Alert.alert(
+        'Already in Your List',
+        `"${title.trim()}" appears to already be on your list. Do you want to add it anyway?`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Add Anyway', onPress: performSave }
+        ]
+      );
+      return;
+    }
+
+    performSave();
+  };
+
   const bgColor = theme === 'Dark' ? '#000' : '#f8f9fa';
   const textColor = theme === 'Dark' ? '#fff' : '#000';
   const inputBg = theme === 'Dark' ? '#1A1A1A' : '#fff';
@@ -194,7 +294,7 @@ export default function AddScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       {/* ScrollView contentContainerStyle allows flexGrow to fill the screen */}
-      <ScrollView style={styles.container} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+      <ScrollView style={styles.container} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled" scrollEnabled={!showDropdown}>
         
         {/* Tapping anywhere empty in this wrapper will close keyboard & dropdowns */}
         <TouchableWithoutFeedback 
@@ -264,25 +364,45 @@ export default function AddScreen() {
                   {isSearching ? (
                     <View style={{ padding: 20 }}><ActivityIndicator color={accentColor} /></View>
                   ) : suggestions.length > 0 ? (
-                    suggestions.map((anime) => (
-                      <TouchableOpacity 
-                        key={anime.mal_id} 
-                        style={[styles.dropdownItem, { borderBottomColor: borderColor }]}
-                        onPress={() => handleSelectAnime(anime)}
-                      >
-                        <Image source={{ uri: anime.images.jpg.image_url }} style={styles.dropdownImage} />
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.dropdownText, { color: textColor }]} numberOfLines={2}>
-                            {anime.title_english || anime.title}
-                          </Text>
-                          {anime.genres && anime.genres.length > 0 && (
-                            <Text style={{ fontSize: 11, color: '#888', marginTop: 2 }} numberOfLines={1}>
-                              {anime.genres.join(', ')}
+                    <ScrollView
+                      style={{ maxHeight: Dimensions.get('window').height * 0.5 }}  // ← was 410
+                      nestedScrollEnabled={true}
+                      keyboardShouldPersistTaps="handled"
+                      showsVerticalScrollIndicator={true}
+                    >
+                      {suggestions.map((anime) => (
+                        <TouchableOpacity 
+                          key={anime.mal_id} 
+                          style={[styles.dropdownItem, { borderBottomColor: borderColor }]}
+                          onPress={() => handleSelectAnime(anime)}
+                        >
+                          <Image source={{ uri: anime.images.jpg.image_url }} style={styles.dropdownImage} />
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.dropdownText, { color: textColor }]} numberOfLines={2}>
+                              {anime.title_english || anime.title}
                             </Text>
-                          )}
-                        </View>
+                            {anime.genres && anime.genres.length > 0 && (
+                              <Text style={{ fontSize: 11, color: '#888', marginTop: 2 }} numberOfLines={1}>
+                                {anime.genres.join(', ')}
+                              </Text>
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  ) : apiUnavailable ? (
+                    <View style={{ padding: 15, alignItems: 'center' }}>
+                      <Ionicons name="cloud-offline-outline" size={22} color="#888" style={{ marginBottom: 6 }} />
+                      <Text style={{ color: '#888', marginBottom: 4, textAlign: 'center' }}>Anime search is temporarily unavailable.</Text>
+                      <Text style={{ color: '#888', fontSize: 12, textAlign: 'center', marginBottom: 10 }}>Try again in a bit, or add it manually below.</Text>
+                      <TouchableOpacity
+                        onPress={() => setRetryCount((c) => c + 1)}
+                        style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 6, paddingHorizontal: 14, borderRadius: 20, borderWidth: 1, borderColor: accentColor }}
+                      >
+                        <Ionicons name="refresh" size={14} color={accentColor} style={{ marginRight: 6 }} />
+                        <Text style={{ color: accentColor, fontSize: 13, fontWeight: 'bold' }}>Retry</Text>
                       </TouchableOpacity>
-                    ))
+                    </View>
                   ) : (
                     <View style={{ padding: 15, alignItems: 'center' }}>
                       <Text style={{ color: '#888', marginBottom: 4 }}>No results found.</Text>

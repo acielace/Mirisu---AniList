@@ -2,15 +2,10 @@
   "expo": {
     "name": "Mirisu",
     "slug": "Mirisu",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/app_logo.png",
     "userInterfaceStyle": "light",
-    "splash": {
-      "image": "./assets/splash_logo.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#18181A"
-    },
     "ios": {
       "supportsTablet": true
     },
@@ -21,8 +16,7 @@
       "permissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE"
-      ],
-      "jsEngine": "hermes"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -42,7 +36,17 @@
             "enableProguardInReleaseBuilds": true
           }
         }
-      ]
+      ],
+      "expo-sharing",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash_logo.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#18181A"
+        }
+      ],
+      "expo-status-bar"
     ]
   }
 }

@@ -11,4 +11,5 @@ export interface AnimeEntry {
   description?: string;
   genres?: string[]; // NEW: Added to store the genres fetched from AniList
   folder?: string; // Add this line!
+  statusUpdatedAt?: string; // Timestamp of the last status change (e.g. Will Watch -> Watched). Falls back to id (creation time) when unset.
 }

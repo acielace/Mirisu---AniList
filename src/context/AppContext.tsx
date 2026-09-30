@@ -1,5 +1,5 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import { useColorScheme } from 'react-native'; 
+import React, { createContext, useState, useContext, useEffect, useRef, useCallback } from 'react';
+import { useColorScheme, AppState } from 'react-native'; 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AnimeEntry } from '../types';
 
@@ -33,6 +33,57 @@ interface AppContextType {
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
+
+// --- Persistence -----------------------------------------------------------
+// Each persisted value saves itself SAVE_DELAY_MS after its LAST change, so a burst of taps
+// (e.g. holding an episode counter) becomes one write instead of one write per tap, and only
+// the key that actually changed is written.
+const SAVE_DELAY_MS = 500;
+
+// Formats must match what's already stored on existing installs: some keys are raw strings,
+// others are JSON. Changing either would make previously saved data unreadable.
+const asJson = (v: unknown) => JSON.stringify(v);
+const asRaw = (v: string) => v;
+
+function usePersist<T>(key: string, value: T, enabled: boolean, serialize: (v: T) => string) {
+  const latest = useRef(value);
+  const dirty = useRef(false);
+  const skipFirstRun = useRef(true);
+
+  const write = useCallback(async () => {
+    if (!dirty.current) return; // already flushed (e.g. on background) — nothing pending
+    dirty.current = false;
+    try {
+      await AsyncStorage.setItem(key, serialize(latest.current));
+    } catch (error) {
+      console.error(`Failed to save ${key}`, error);
+    }
+  }, [key, serialize]);
+
+  useEffect(() => {
+    latest.current = value;
+    if (!enabled) return; // don't overwrite stored data with defaults before the load finishes
+    if (skipFirstRun.current) {
+      // The first enabled run is just the freshly loaded values; nothing new to save.
+      skipFirstRun.current = false;
+      return;
+    }
+    dirty.current = true;
+    const timer = setTimeout(write, SAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [value, enabled, write]);
+
+  // A pending write must not be lost if the user leaves the app inside the debounce window.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state !== 'active' && dirty.current) write();
+    });
+    return () => {
+      subscription.remove();
+      if (dirty.current) write();
+    };
+  }, [write]);
+}
 
 export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const systemTheme = useColorScheme(); 
@@ -95,25 +146,15 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     loadData();
   }, []); 
 
-  useEffect(() => {
-    const saveData = async () => {
-      if (!isDataLoaded) return; 
-      try {
-        await AsyncStorage.setItem('@anilist_data', JSON.stringify(animeList));
-        await AsyncStorage.setItem('@anilist_categories', JSON.stringify(customCategories));
-        await AsyncStorage.setItem('@anilist_hidden', JSON.stringify(hiddenCategories));
-        await AsyncStorage.setItem('@anilist_themePref', themePref);
-        await AsyncStorage.setItem('@anilist_storageUri', storageUri); 
-        await AsyncStorage.setItem('@anilist_backupFreq', backupFrequency); 
-        await AsyncStorage.setItem('@anilist_accentColor', accentColor);
-        await AsyncStorage.setItem('@anilist_nsfw', JSON.stringify(nsfwFilter));
-        await AsyncStorage.setItem('@anilist_folders', JSON.stringify(folders)); // NEW
-      } catch (error) {
-        console.error("Failed to save data", error);
-      }
-    };
-    saveData();
-  }, [animeList, customCategories, hiddenCategories, themePref, storageUri, backupFrequency, accentColor, nsfwFilter, folders, isDataLoaded]);
+  usePersist('@anilist_data', animeList, isDataLoaded, asJson);
+  usePersist('@anilist_categories', customCategories, isDataLoaded, asJson);
+  usePersist('@anilist_hidden', hiddenCategories, isDataLoaded, asJson);
+  usePersist('@anilist_themePref', themePref, isDataLoaded, asRaw);
+  usePersist('@anilist_storageUri', storageUri, isDataLoaded, asRaw);
+  usePersist('@anilist_backupFreq', backupFrequency, isDataLoaded, asRaw);
+  usePersist('@anilist_accentColor', accentColor, isDataLoaded, asRaw);
+  usePersist('@anilist_nsfw', nsfwFilter, isDataLoaded, asJson);
+  usePersist('@anilist_folders', folders, isDataLoaded, asJson);
 
   return (
     <AppContext.Provider value={{ 

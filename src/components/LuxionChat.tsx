@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, TextInput, FlatList, Image, M
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage'; 
 import { useAppContext } from '../context/AppContext';
+import { ANILIST_URL, LUXION_PROXY_URL, LUXION_PROXY_SECRET, LUXION_MODEL } from '../constants';
 
 interface Message {
   id: string;
@@ -57,7 +58,7 @@ export default function LuxionChat() {
                 }
               }
             `;
-            const res = await fetch('https://graphql.anilist.co', {
+            const res = await fetch(ANILIST_URL, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
               body: JSON.stringify({ query })
@@ -123,16 +124,19 @@ export default function LuxionChat() {
     ];
 
     try {
-      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      const response = await fetch(LUXION_PROXY_URL, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.EXPO_PUBLIC_GROQ_API_KEY}`,
           'Content-Type': 'application/json',
+          // Shared secret so only this app can call our Worker — Cloudflare rejects anything
+          // that doesn't send this before it ever touches the Groq key or our quota.
+          'X-Proxy-Secret': LUXION_PROXY_SECRET,
         },
         body: JSON.stringify({
-          model: 'llama-3.3-70b-versatile',
+          model: LUXION_MODEL,
           messages: apiMessages,
           temperature: 0.7,
+          reasoning_effort: 'low',
         })
       });
       

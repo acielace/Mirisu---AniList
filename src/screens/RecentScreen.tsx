@@ -12,11 +12,14 @@ export default function RecentScreen() {
   const cardBg = theme === 'Dark' ? '#1A1A1A' : '#fff';
   const borderColor = theme === 'Dark' ? '#333' : '#ddd';
 
+  // Use the last status-change timestamp when available, otherwise fall back to creation time (id).
+  const getRelevantTimestamp = (anime: AnimeEntry) => anime.statusUpdatedAt || anime.id;
+
   // 1. Filter out "Will Watch" so we only get Watched and Dropped
   const recentAnime = animeList.filter(anime => anime.status === 'Watched' || anime.status === 'Dropped');
 
-  // 2. Sort from newest to oldest using the ID (which is a timestamp)
-  recentAnime.sort((a, b) => parseInt(b.id) - parseInt(a.id));
+  // 2. Sort from newest to oldest using the relevant timestamp (status change time, not original add time)
+  recentAnime.sort((a, b) => parseInt(getRelevantTimestamp(b)) - parseInt(getRelevantTimestamp(a)));
 
   // 3. Helper function to turn the timestamp into "Today", "Yesterday", or a Date
   const getDateCategory = (timestamp: string) => {
@@ -35,7 +38,7 @@ export default function RecentScreen() {
   // 4. Group the anime by these date strings
   const groupedAnime: { [key: string]: AnimeEntry[] } = {};
   recentAnime.forEach(anime => {
-    const dateLabel = getDateCategory(anime.id);
+    const dateLabel = getDateCategory(getRelevantTimestamp(anime));
     if (!groupedAnime[dateLabel]) {
       groupedAnime[dateLabel] = [];
     }

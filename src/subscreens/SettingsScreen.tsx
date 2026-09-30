@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Alert, Platform, StatusBar, ScrollView, Switch, Modal } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Platform, ScrollView, Switch, Modal } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useAppContext } from '../context/AppContext';
 import { useNavigation } from '@react-navigation/native';
@@ -19,7 +20,7 @@ export default function SettingsScreen() {
     accentColor, setAccentColor, 
     nsfwFilter, setNsfwFilter,
     setDisplayMode, setSortBy, setIsAscending,
-    setAnimeList, setCustomCategories, setHiddenCategories, setStorageUri, setBackupFrequency
+    setAnimeList, setCustomCategories, setHiddenCategories, setFolders, setStorageUri, setBackupFrequency
   } = useAppContext();
   
   const navigation = useNavigation<any>();
@@ -95,6 +96,7 @@ export default function SettingsScreen() {
     setAnimeList([]);
     setCustomCategories([]);
     setHiddenCategories([]);
+    setFolders([]);
     setThemePref('System');
     setAccentColor('#4FA4FF');
     setNsfwFilter(false);
@@ -113,7 +115,7 @@ export default function SettingsScreen() {
   };
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: bgColor, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0 }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: bgColor }}>
       
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.navigate('More')} style={{ padding: 10 }}>
