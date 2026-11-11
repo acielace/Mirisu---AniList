@@ -5,6 +5,11 @@
 export const ANILIST_URL = 'https://graphql.anilist.co';
 export const KITSU_ANIME_URL = 'https://kitsu.io/api/edge/anime';
 
+// --- Reverse image search ---
+// trace.moe: anime scene recognition — send a screenshot/photo, get the anime,
+// episode, and AniList ID back. Free with modest rate limits for personal use.
+export const TRACE_MOE_URL = 'https://api.trace.moe/search';
+
 // --- Luxion (AI chat) ---
 // Cloudflare Worker proxy — holds the Groq key server-side so it never ships in the app bundle.
 export const LUXION_PROXY_URL = 'https://fancy-sky-af41luxion-proxy.gabbycasera1219.workers.dev';

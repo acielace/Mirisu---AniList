@@ -85,7 +85,17 @@ export default function LuxionChat() {
 
   const sendLuxionMessage = async () => {
     if (!luxionInput.trim() || isLuxionLoading) return;
-
+  // EXPO_PUBLIC_ vars are inlined when the bundle is BUILT — Expo Go gets this
+  // from the local .env, release builds get it from EAS. If it's missing, the
+  // Worker rejects everything — say so plainly instead of blaming Groq.
+  if (!LUXION_PROXY_SECRET) {
+    setLuxionMessages(prev => [...prev, {
+      id: Date.now().toString(),
+      role: 'assistant',
+      content: '[Error]: Luxion is not configured in this build — the proxy secret is missing. Set EXPO_PUBLIC_PROXY_SECRET as an EAS environment variable and rebuild.'
+    }]);
+    return;
+  }
     const userMessage: Message = { id: Date.now().toString(), role: 'user', content: luxionInput.trim() };
     setLuxionMessages(prev => [...prev, userMessage]);
     setLuxionInput('');

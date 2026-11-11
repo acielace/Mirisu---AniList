@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, TextInput, ScrollView, useWindowDimensions, FlatList, Image, Modal, Animated, KeyboardAvoidingView, Platform, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useAppContext } from '../context/AppContext';
 import { AnimeEntry } from '../types';
 import LuxionChat from '../components/LuxionChat';
@@ -14,7 +15,8 @@ export default function ListScreen() {
     isListEditMode, setIsListEditMode, folders, setFolders 
   } = useAppContext();
   
-  const { width } = useWindowDimensions(); 
+  const navigation = useNavigation<any>();
+  const { width, height } = useWindowDimensions(); 
 
   const allTabs = ['Watched', 'Will Watch', 'Dropped', ...customCategories]
                     .filter(cat => !hiddenCategories.includes(cat));
@@ -23,16 +25,12 @@ export default function ListScreen() {
   // Multi-Selection and Folder States
   const [selectedAnimeIds, setSelectedAnimeIds] = useState<string[]>([]);
   const [manageFoldersVisible, setManageFoldersVisible] = useState(false);
-  const [assignFolderVisible, setAssignFolderVisible] = useState(false);
   const [newFolderName, setNewFolderName] = useState('');
   const [activeFolder, setActiveFolder] = useState<string | null>(null);
+  const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
+  const [renameText, setRenameText] = useState('');
 
   const [deleteModeId, setDeleteModeId] = useState<string | null>(null);
-  const [viewAnime, setViewAnime] = useState<AnimeEntry | null>(null);
-  const [isSynopsisExpanded, setIsSynopsisExpanded] = useState(false);
-
-  const [isEditingComment, setIsEditingComment] = useState(false);
-  const [tempComment, setTempComment] = useState('');
 
   const [movingAnime, setMovingAnime] = useState<AnimeEntry | null>(null);
   const [moveStatus, setMoveStatus] = useState('');
@@ -74,6 +72,29 @@ export default function ListScreen() {
     });
   };
 
+  // Edit mode action bar — slides up from below the screen when editing starts.
+  const editBarAnim = useRef(new Animated.Value(160)).current;
+  useEffect(() => {
+    Animated.timing(editBarAnim, {
+      toValue: isListEditMode ? 0 : 160,
+      duration: 250,
+      useNativeDriver: true,
+    }).start();
+  }, [isListEditMode]);
+
+  // Manage Folders sheet — same slide-up pattern as the filter sheet.
+  const folderSheetAnim = useRef(new Animated.Value(800)).current;
+
+  const openManageFolders = () => {
+    setManageFoldersVisible(true);
+    Animated.timing(folderSheetAnim, { toValue: 0, duration: 300, useNativeDriver: true }).start();
+  };
+
+  const closeManageFolders = () => {
+    setRenamingFolder(null);
+    Animated.timing(folderSheetAnim, { toValue: 800, duration: 250, useNativeDriver: true }).start(() => setManageFoldersVisible(false));
+  };
+
   useEffect(() => {
     if (!isListEditMode) setSelectedAnimeIds([]);
   }, [isListEditMode]);
@@ -106,13 +127,6 @@ export default function ListScreen() {
       setMoveEpisode(movingAnime.episode || 0);
     }
   }, [movingAnime]);
-
-  useEffect(() => {
-    setIsEditingComment(false);
-    if (viewAnime) {
-      setTempComment(viewAnime.comments || '');
-    }
-  }, [viewAnime]);
 
   const isScrollable = allTabs.length > 3;
   const tabWidth = isScrollable ? undefined : width / allTabs.length;
@@ -160,33 +174,49 @@ export default function ListScreen() {
       }
     });
 
-    Object.keys(folderMap).forEach(folderName => {
-      finalDisplayData.push({ 
-        isFolder: true, 
-        id: `folder_${folderName}`, 
-        title: folderName, 
-        items: folderMap[folderName] 
-      });
+    // Folders are sortable pseudo-entries mixed into the SAME sort as regular
+    // anime — no pinning, no section header. The alphabetical pre-sort here is
+    // only for deterministic tie-breaking (Array.sort is stable).
+    // The `|| []` guards mean a malformed entry can never crash the render.
+    const folderItems = Object.keys(folderMap).map(folderName => ({ 
+      isFolder: true, 
+      id: `folder_${folderName}`, 
+      title: folderName, 
+      items: folderMap[folderName] || [] 
+    })).sort((a, b) => a.title.localeCompare(b.title));
+
+    finalDisplayData = [...folderItems, ...standalones];
+
+    // One sort for everyone — folders rank by their own rules:
+    //   Alphabetically: folder name vs anime title
+    //   Stars:          folders count as 0 (same as an unrated anime)
+    //   Date Added:     a folder's "date" is the newest of its entries
+    finalDisplayData.sort((a, b) => {
+      let result = 0;
+      if (sortBy === 'Alphabetically') {
+        result = (a.title || '').localeCompare(b.title || '');
+      } else if (sortBy === 'Stars') {
+        const ratingA = a.isFolder ? 0 : (a.rating || 0);
+        const ratingB = b.isFolder ? 0 : (b.rating || 0);
+        result = ratingA - ratingB;
+      } else if (sortBy === 'Date Added') {
+        const idA = a.isFolder
+          ? Math.max(...(a.items || []).map((item: any) => parseInt(item.statusUpdatedAt || item.id)))
+          : parseInt(a.statusUpdatedAt || a.id);
+        const idB = b.isFolder
+          ? Math.max(...(b.items || []).map((item: any) => parseInt(item.statusUpdatedAt || item.id)))
+          : parseInt(b.statusUpdatedAt || b.id);
+        result = idA - idB;
+      }
+      return isAscending ? result : -result;
     });
-    finalDisplayData.push(...standalones);
   }
 
-  finalDisplayData.sort((a, b) => {
-    let result = 0;
-    if (sortBy === 'Alphabetically') {
-      result = (a.title || '').localeCompare(b.title || '');
-    } else if (sortBy === 'Stars') {
-      const ratingA = a.isFolder ? 0 : a.rating; 
-      const ratingB = b.isFolder ? 0 : b.rating;
-      result = ratingA - ratingB;
-    } else if (sortBy === 'Date Added') {
-      // Use statusUpdatedAt (last status change) when available, falling back to id (creation time).
-      const idA = a.isFolder ? Math.max(...a.items.map((i:any)=>parseInt(i.statusUpdatedAt || i.id))) : parseInt(a.statusUpdatedAt || a.id);
-      const idB = b.isFolder ? Math.max(...b.items.map((i:any)=>parseInt(i.statusUpdatedAt || i.id))) : parseInt(b.statusUpdatedAt || b.id);
-      result = idA - idB;
-    }
-    return isAscending ? result : -result;
-  });
+  // --- SELECTION HELPERS (for the action bar) ---
+  const visibleAnimeIds: string[] = finalDisplayData
+    .filter((d: any) => !d.isFolder)
+    .map((d: any) => d.id);
+  const allVisibleSelected = visibleAnimeIds.length > 0 && visibleAnimeIds.every((id: string) => selectedAnimeIds.includes(id));
 
   // --- ACTIONS ---
   const toggleSelection = (id: string) => {
@@ -195,6 +225,11 @@ export default function ListScreen() {
     } else {
       setSelectedAnimeIds([...selectedAnimeIds, id]);
     }
+  };
+
+  const toggleSelectAll = () => {
+    if (allVisibleSelected) setSelectedAnimeIds([]);
+    else setSelectedAnimeIds(visibleAnimeIds);
   };
 
   const handleCreateFolder = () => {
@@ -206,6 +241,23 @@ export default function ListScreen() {
     setFolders([...folders, newFolderName.trim()]);
     showToast(`Created folder: ${newFolderName.trim()}`);
     setNewFolderName('');
+  };
+
+  // Renames the folder AND every entry inside it (the name is stored on each
+  // entry, so nothing gets orphaned).
+  const handleRenameFolder = (oldName: string) => {
+    const newName = renameText.trim();
+    if (!newName || newName === oldName) { setRenamingFolder(null); return; }
+    if (folders.includes(newName)) {
+      setCustomAlert({ visible: true, title: 'Already Exists', message: 'A folder with this name already exists.', type: 'alert' });
+      return;
+    }
+    setFolders(folders.map(f => f === oldName ? newName : f));
+    setAnimeList(animeList.map(a => a.folder === oldName ? { ...a, folder: newName } : a));
+    // Insurance in case this sheet is ever opened while inside the renamed folder
+    if (activeFolder === oldName) setActiveFolder(newName);
+    setRenamingFolder(null);
+    showToast(`Renamed to ${newName}`);
   };
 
   const handleDeleteFolder = (folderName: string) => {
@@ -227,51 +279,48 @@ export default function ListScreen() {
     setAnimeList(animeList.map(a => selectedAnimeIds.includes(a.id) ? { ...a, folder: folderName } : a));
     setSelectedAnimeIds([]);
     setIsListEditMode(false);
-    setAssignFolderVisible(false);
     showToast(`Moved to ${folderName}`);
   };
 
-  const toggleCategory = (cat: string) => {
-    if (!viewAnime) return;
-    const currentCats = viewAnime.categories || [viewAnime.status];
-    let newCats;
-    if (currentCats.includes(cat)) { newCats = currentCats.filter(c => c !== cat); } 
-    else { newCats = [...currentCats, cat]; }
-    if (!newCats.includes(viewAnime.status)) { newCats.push(viewAnime.status); }
-
-    const updatedAnime = { ...viewAnime, categories: newCats };
-    setViewAnime(updatedAnime);
-    setAnimeList(animeList.map(a => a.id === viewAnime.id ? updatedAnime : a));
+  // Folder chip tap — one-tap grouping from the action bar.
+  const quickAssign = (folderName: string) => {
+    if (selectedAnimeIds.length === 0) {
+      setCustomAlert({ visible: true, title: 'Hold up!', message: 'Select some anime first!', type: 'alert' });
+      return;
+    }
+    assignToFolder(folderName);
   };
 
-  const updateProgress = (type: 'season' | 'episode', amount: number) => {
-    if (!viewAnime) return;
-    const newValue = Math.max(type === 'season' ? 1 : 0, (viewAnime[type] || 0) + amount);
-    const updatedAnime = { ...viewAnime, [type]: newValue };
-    setViewAnime(updatedAnime);
-    setAnimeList(animeList.map(a => a.id === viewAnime.id ? updatedAnime : a));
+  // Multi-delete from the action bar.
+  const handleDeleteSelected = () => {
+    if (selectedAnimeIds.length === 0) {
+      setCustomAlert({ visible: true, title: 'Hold up!', message: 'Select some anime first!', type: 'alert' });
+      return;
+    }
+    const count = selectedAnimeIds.length;
+    setCustomAlert({
+      visible: true,
+      title: 'Delete Anime',
+      message: `Delete ${count} ${count === 1 ? 'entry' : 'entries'} from your list? This cannot be undone.`,
+      type: 'confirm',
+      confirmText: 'Delete',
+      onConfirm: () => {
+        setAnimeList(animeList.filter(a => !selectedAnimeIds.includes(a.id)));
+        setSelectedAnimeIds([]);
+        showToast(`Deleted ${count} ${count === 1 ? 'entry' : 'entries'}.`);
+      }
+    });
   };
 
-  const setExactProgress = (type: 'season' | 'episode', value: number) => {
-    if (!viewAnime) return;
-    const updatedAnime = { ...viewAnime, [type]: value };
-    setViewAnime(updatedAnime);
-    setAnimeList(animeList.map(a => a.id === viewAnime.id ? updatedAnime : a));
-  };
-
-  const updateRating = (newRating: number) => {
-    if (!viewAnime) return;
-    const updatedAnime = { ...viewAnime, rating: newRating };
-    setViewAnime(updatedAnime);
-    setAnimeList(animeList.map(a => a.id === viewAnime.id ? updatedAnime : a));
-  };
-
-  const saveComment = () => {
-    if (!viewAnime) return;
-    const updatedAnime = { ...viewAnime, comments: tempComment };
-    setViewAnime(updatedAnime);
-    setAnimeList(animeList.map(a => a.id === viewAnime.id ? updatedAnime : a));
-    setIsEditingComment(false);
+  // Remove selected from the folder you're currently inside (action bar, edit mode).
+  const removeSelectedFromFolder = () => {
+    if (selectedAnimeIds.length === 0) {
+      setCustomAlert({ visible: true, title: 'Hold up!', message: 'Select an anime to remove first!', type: 'alert' });
+      return;
+    }
+    setAnimeList(animeList.map(a => selectedAnimeIds.includes(a.id) ? { ...a, folder: undefined } : a));
+    setSelectedAnimeIds([]);
+    showToast('Removed from folder');
   };
 
   const handleSaveMove = () => {
@@ -321,8 +370,7 @@ export default function ListScreen() {
       } else if (item.isFolder) {
         setActiveFolder(item.title);
       } else {
-        setViewAnime(item);
-        setIsSynopsisExpanded(false); 
+        navigation.navigate('AnimeDetail', { animeId: item.id });
       }
     };
 
@@ -339,7 +387,6 @@ export default function ListScreen() {
           style={[styles.textOnlyCard, { backgroundColor: cardBg, borderColor }]}
           onPress={handlePress} onLongPress={handleLongPress} delayLongPress={400}
         >
-          {/* Inner stroke for selection */}
           {isSelected && <View style={[StyleSheet.absoluteFill, { borderWidth: 2, borderColor: accentColor, borderRadius: 8 }]} pointerEvents="none" />}
 
           {isListEditMode && !item.isFolder && (
@@ -353,7 +400,7 @@ export default function ListScreen() {
               {!item.isFolder && <Text style={{ color: '#888', fontSize: 11, marginLeft: 10 }}>{formatDate(item.statusUpdatedAt || item.id)}</Text>}
             </View>
             <Text style={{ color: '#888', fontSize: 12, marginTop: 4 }}>
-              {item.isFolder ? `${item.items.length} Entries` : (item.status !== 'Will Watch' ? `S${item.season || 1} • Ep ${item.episode || 0}` : '')}
+              {item.isFolder ? `${(item.items || []).length} Entries` : (item.status !== 'Will Watch' ? `S${item.season || 1} • Ep ${item.episode || 0}` : '')}
             </Text>
           </View>
 
@@ -384,7 +431,7 @@ export default function ListScreen() {
     // 2. GRID / LIST COVER IMAGE RENDER
     const coverContent = item.isFolder ? (
       <View style={isGrid ? { width: '100%', height: 140 } : { width: 60, height: 80 }}>
-        {item.items.slice(0, 3).map((anime: any, idx: number) => (
+        {(item.items || []).slice(0, 3).map((anime: any, idx: number) => (
           <Image 
             key={idx} 
             source={{ uri: anime.imageUri }} 
@@ -410,11 +457,11 @@ export default function ListScreen() {
       <TouchableOpacity 
         style={[
           isGrid ? styles.gridCard : styles.listCard, 
-          { width: isGrid ? cardWidth : 'auto', backgroundColor: cardBg, borderColor }
+          { width: isGrid ? cardWidth : 'auto', backgroundColor: cardBg, borderColor },
+          isListEditMode && !item.isFolder && isSelected && { transform: [{ scale: 0.96 }] }
         ]}
         onPress={handlePress} onLongPress={handleLongPress} delayLongPress={400} activeOpacity={isDeleting ? 1 : 0.7}
       >
-        {/* Inner stroke for selection so layout doesn't jump */}
         {isSelected && <View style={[StyleSheet.absoluteFill, { borderWidth: 2, borderColor: accentColor, borderRadius: isGrid ? 8 : 12, zIndex: 11 }]} pointerEvents="none" />}
 
         {coverContent}
@@ -436,7 +483,7 @@ export default function ListScreen() {
           )}
           
           {item.isFolder ? (
-            <Text style={{ color: '#888', fontSize: 12, marginTop: isGrid ? 0 : 4, fontWeight: 'bold' }}>{item.items.length} Entries</Text>
+            <Text style={{ color: '#888', fontSize: 12, marginTop: isGrid ? 0 : 4, fontWeight: 'bold' }}>{(item.items || []).length} Entries</Text>
           ) : (
             <>
               {!isGrid && <Text style={[styles.listStatus, { color: '#888' }]}>{item.status !== 'Will Watch' ? `S${item.season || 1} • Ep ${item.episode || 0}  |  ` : ''}{item.categories?.join(', ') || item.status}</Text>}
@@ -468,9 +515,10 @@ export default function ListScreen() {
           )}
         </View>
 
+        {/* Selection badge — always rendered in edit mode, color-swapped only */}
         {isListEditMode && !item.isFolder && (
-          <View style={{ position: 'absolute', top: 10, left: 10, backgroundColor: cardBg, borderRadius: 12, zIndex: 12 }}>
-            <Ionicons name={isSelected ? "checkmark-circle" : "ellipse-outline"} size={24} color={isSelected ? accentColor : '#888'} />
+          <View style={[styles.selectBadge, { backgroundColor: isSelected ? accentColor : 'rgba(0,0,0,0.5)' }]}>
+            <Ionicons name={isSelected ? 'checkmark' : 'ellipse-outline'} size={15} color="#fff" />
           </View>
         )}
 
@@ -524,28 +572,8 @@ export default function ListScreen() {
         </ScrollView>
       </View>
 
-      {/* SEARCH OR EDIT ACTION BAR */}
-      {/* Hidden when actively viewing inside a folder */}
-      {isListEditMode && !activeFolder ? (
-        <View style={[styles.editBar, { backgroundColor: cardBg, borderColor }]}>
-          <Text style={{ color: textColor, fontWeight: 'bold', fontSize: 16 }}>{selectedAnimeIds.length} Selected</Text>
-          <View style={{ flexDirection: 'row', gap: 20, alignItems: 'center' }}>
-            <TouchableOpacity onPress={() => setManageFoldersVisible(true)}>
-              <Ionicons name="folder-outline" size={28} color={textColor} />
-            </TouchableOpacity>
-            <TouchableOpacity onPress={() => {
-              if (selectedAnimeIds.length === 0) { 
-                setCustomAlert({ visible: true, title: 'Hold up!', message: 'Select some anime first!', type: 'alert' }); 
-                return; 
-              }
-              if (folders.length === 0) setManageFoldersVisible(true);
-              else setAssignFolderVisible(true);
-            }}>
-              <Ionicons name="add" size={32} color={accentColor} />
-            </TouchableOpacity>
-          </View>
-        </View>
-      ) : isSearchActive && !activeFolder && (
+      {/* SEARCH — hidden while editing */}
+      {isSearchActive && !activeFolder && !isListEditMode && (
         <View style={[styles.searchContainer, { backgroundColor: cardBg, borderColor }]}>
           <Ionicons name="search" size={20} color="#888" style={styles.searchIcon} />
           <TextInput 
@@ -566,27 +594,7 @@ export default function ListScreen() {
             <Ionicons name="arrow-back" size={20} color={accentColor} />
             <Text style={{ color: accentColor, fontSize: 16, fontWeight: 'bold', marginLeft: 10 }}>Back to {activeTab}</Text>
           </TouchableOpacity>
-          
-          {isListEditMode ? (
-            <TouchableOpacity 
-              style={{ marginLeft: 'auto', flexDirection: 'row', alignItems: 'center', paddingVertical: 4, paddingHorizontal: 10, borderRadius: 8, backgroundColor: 'rgba(255,59,48,0.1)' }}
-              onPress={() => {
-                if (selectedAnimeIds.length === 0) { 
-                  setCustomAlert({ visible: true, title: 'Hold up!', message: 'Select an anime to remove first!', type: 'alert' }); 
-                  return; 
-                }
-                setAnimeList(animeList.map(a => selectedAnimeIds.includes(a.id) ? { ...a, folder: undefined } : a));
-                setSelectedAnimeIds([]);
-                showToast('Removed from folder');
-              }}
-            >
-              <Ionicons name="remove-circle" size={20} color="#FF3B30" />
-              {/* Shows exactly how many are selected to be removed */}
-              <Text style={{ color: '#FF3B30', fontSize: 14, fontWeight: 'bold', marginLeft: 6 }}>Remove ({selectedAnimeIds.length})</Text>
-            </TouchableOpacity>
-          ) : (
-            <Text style={{ color: textColor, fontSize: 16, marginLeft: 'auto', fontWeight: 'bold' }}>{activeFolder}</Text>
-          )}
+          <Text style={{ color: textColor, fontSize: 16, marginLeft: 'auto', fontWeight: 'bold' }}>{activeFolder}</Text>
         </View>
       )}
 
@@ -597,7 +605,7 @@ export default function ListScreen() {
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
         numColumns={displayMode === 'Compact Grid' ? 3 : 1}
-        contentContainerStyle={styles.listContent}
+        contentContainerStyle={[styles.listContent, { paddingBottom: isListEditMode ? 230 : 100 }]}
         columnWrapperStyle={displayMode === 'Compact Grid' ? styles.gridRow : undefined}
         showsVerticalScrollIndicator={true}
         ListEmptyComponent={
@@ -608,7 +616,8 @@ export default function ListScreen() {
         }
       />
 
-      <LuxionChat />
+      {/* Luxion's FAB hides while editing */}
+      {!isListEditMode && <LuxionChat />}
 
       {/* --- Custom Alert Modal --- */}
       <Modal visible={customAlert.visible} animationType="fade" transparent={true} onRequestClose={() => setCustomAlert({ ...customAlert, visible: false })}>
@@ -642,246 +651,112 @@ export default function ListScreen() {
         </View>
       </Modal>
 
-      {/* --- Manage Folders Modal --- */}
-      <Modal visible={manageFoldersVisible} animationType="fade" transparent={true} onRequestClose={() => setManageFoldersVisible(false)}>
-        <TouchableOpacity style={styles.modalOverlayFade} activeOpacity={1} onPress={() => setManageFoldersVisible(false)}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end' }}>
-            <TouchableOpacity activeOpacity={1} onPress={() => {}} style={[styles.bottomSheet, { backgroundColor: cardBg, borderColor }]}>
-              
-              <View style={styles.dragIndicator} />
-              
-              <View style={styles.sheetHeader}>
-                <Text style={[styles.sheetTitle, { color: textColor }]}>Manage Folders</Text>
-              </View>
-              
-              <View style={[styles.inputWrapper, { backgroundColor: bgColor, borderColor, marginBottom: 20 }]}>
-                <TextInput 
-                  style={[styles.inputWithClear, { color: textColor }]}
-                  placeholder="New Folder Name..."
-                  placeholderTextColor="#888"
-                  value={newFolderName}
-                  onChangeText={setNewFolderName}
-                />
-                <TouchableOpacity onPress={handleCreateFolder} style={{ paddingRight: 15 }}>
-                  <Ionicons name="add-circle" size={28} color={accentColor} />
-                </TouchableOpacity>
-              </View>
+      {/* --- Manage Folders Sheet — LuxionChat's modal structure: the backdrop
+          is a SIBLING stacked above the sheet, so nothing touchable wraps the
+          folder list. A tap-swallowing wrapper around the sheet is what was
+          eating the list's scroll gestures. --- */}
+      <Modal visible={manageFoldersVisible} animationType="fade" transparent={true} onRequestClose={closeManageFolders}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end' }}>
+          
+          {/* Backdrop — fills all the space above the sheet; tap to dismiss */}
+          <TouchableOpacity style={styles.modalOverlayFade} activeOpacity={1} onPress={closeManageFolders} />
 
-              <ScrollView style={{ maxHeight: 300 }}>
-                {folders.length === 0 ? (
-                  <Text style={{ color: '#888', textAlign: 'center', marginTop: 20 }}>No folders created yet.</Text>
-                ) : (
-                  folders.map((folder) => (
-                    <View key={folder} style={[styles.folderListItem, { borderBottomColor: borderColor }]}>
-                      <Ionicons name="folder" size={24} color={accentColor} />
-                      <Text style={{ color: textColor, fontSize: 16, flex: 1, marginLeft: 15 }}>{folder}</Text>
-                      <TouchableOpacity onPress={() => handleDeleteFolder(folder)}>
-                        <Ionicons name="trash-outline" size={24} color="#FF3B30" />
-                      </TouchableOpacity>
-                    </View>
-                  ))
-                )}
-              </ScrollView>
+          <Animated.View style={[styles.bottomSheet, { backgroundColor: cardBg, borderColor, transform: [{ translateY: folderSheetAnim }] }]}>
+            <View style={styles.dragIndicator} />
 
-            </TouchableOpacity>
-          </KeyboardAvoidingView>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* --- Assign Folder Modal --- */}
-      <Modal visible={assignFolderVisible} animationType="fade" transparent={true} onRequestClose={() => setAssignFolderVisible(false)}>
-        <TouchableOpacity style={styles.modalOverlayFade} activeOpacity={1} onPress={() => setAssignFolderVisible(false)}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1, justifyContent: 'flex-end' }}>
-            <TouchableOpacity activeOpacity={1} onPress={() => {}} style={[styles.bottomSheet, { backgroundColor: cardBg, borderColor }]}>
-              
-              <View style={styles.dragIndicator} />
-              
-              <View style={styles.sheetHeader}>
-                <Text style={[styles.sheetTitle, { color: textColor }]}>Move to Folder</Text>
-              </View>
-
-              <ScrollView style={{ maxHeight: 300 }}>
-                {folders.map((folder) => (
-                  <TouchableOpacity key={folder} style={[styles.folderListItem, { borderBottomColor: borderColor }]} onPress={() => assignToFolder(folder)}>
-                    <Ionicons name="folder" size={24} color={accentColor} />
-                    <Text style={{ color: textColor, fontSize: 16, flex: 1, marginLeft: 15 }}>{folder}</Text>
-                    <Ionicons name="chevron-forward" size={20} color="#888" />
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-
-            </TouchableOpacity>
-          </KeyboardAvoidingView>
-        </TouchableOpacity>
-      </Modal>
-
-      {/* --- Details Modal --- */}
-      <Modal visible={!!viewAnime} animationType="slide" transparent={false} onRequestClose={() => setViewAnime(null)}>
-        <SafeAreaView style={{ flex: 1, backgroundColor: bgColor }}>
-          <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }}>
-            
-            <View style={[styles.modalHeader, { borderBottomColor: borderColor }]}>
-              <TouchableOpacity onPress={() => setViewAnime(null)} style={styles.closeBtn}><Ionicons name="chevron-down" size={28} color={textColor} /></TouchableOpacity>
-              <Text style={[styles.modalHeaderText, { color: textColor }]}>Details</Text>
-              <View style={{ width: 28 }} />
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.sheetTitle, { color: textColor }]}>Manage Folders</Text>
+              <TouchableOpacity onPress={closeManageFolders} style={{ padding: 4 }}>
+                <Ionicons name="close" size={26} color={textColor} />
+              </TouchableOpacity>
             </View>
 
-            <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 20 }} keyboardShouldPersistTaps="handled">
-              <View style={[styles.modalImageContainer, { backgroundColor: cardBg, borderColor }]}>
-                {viewAnime?.imageUri ? <Image source={{ uri: viewAnime.imageUri }} style={styles.modalImage} /> : <Ionicons name="image-outline" size={60} color="#888" />}
-              </View>
+            {/* Create row — accent button dims until there's a name (Luxion send-button language) */}
+            <View style={[styles.inputWrapper, { backgroundColor: bgColor, borderColor, marginBottom: 20 }]}>
+              <TextInput 
+                style={[styles.inputWithClear, { color: textColor }]}
+                placeholder="New folder name..."
+                placeholderTextColor="#888"
+                value={newFolderName}
+                onChangeText={setNewFolderName}
+                onSubmitEditing={handleCreateFolder}
+                returnKeyType="done"
+              />
+              <TouchableOpacity 
+                onPress={handleCreateFolder} 
+                style={[styles.createFolderBtn, { backgroundColor: newFolderName.trim() ? accentColor : '#555' }]}
+              >
+                <Ionicons name="add" size={20} color="#fff" />
+              </TouchableOpacity>
+            </View>
 
-              <Text style={[styles.modalTitle, { color: textColor }]}>{viewAnime?.title}</Text>
-              
-              {viewAnime?.genres && viewAnime.genres.length > 0 && (
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', marginBottom: 15 }}>
-                  {viewAnime.genres.map((genre, idx) => (
-                    <View key={idx} style={[styles.modalGenrePill, { borderColor: accentColor, backgroundColor: cardBg }]}>
-                      <Text style={{ color: textColor, fontSize: 13, fontWeight: '600' }}>{genre}</Text>
-                    </View>
-                  ))}
+            {/* Screen-relative window (~6-7 rows visible) + visible scroll indicator */}
+            <ScrollView style={{ maxHeight: height * 0.45 }} showsVerticalScrollIndicator={true} keyboardShouldPersistTaps="handled">
+              {folders.length === 0 ? (
+                <View style={{ alignItems: 'center', paddingVertical: 30 }}>
+                  <Ionicons name="folder-open-outline" size={44} color="#888" />
+                  <Text style={{ color: '#888', marginTop: 10, fontSize: 15 }}>No folders yet.</Text>
+                  <Text style={{ color: '#888', fontSize: 12, marginTop: 4, textAlign: 'center' }}>Name one above to start grouping your anime.</Text>
                 </View>
-              )}
-
-              {viewAnime?.status !== 'Will Watch' && (
-                <View style={styles.modalStars}>
-                  {[1, 2, 3, 4, 5].map((star) => (
-                    <TouchableOpacity key={star} onPress={() => updateRating(star)}>
-                      <Ionicons 
-                        name={star <= (viewAnime?.rating || 0) ? "star" : "star-outline"} 
-                        size={36} 
-                        color={star <= (viewAnime?.rating || 0) ? accentColor : "#555"} 
-                      />
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-
-              {viewAnime?.description ? (
-                <View style={{ marginBottom: 25 }}>
-                  <Text style={[styles.modalSectionTitle, { color: textColor, marginTop: 0 }]}>Synopsis</Text>
-                  <Text 
-                    style={{ color: textColor, opacity: 0.8, lineHeight: 22 }}
-                    numberOfLines={isSynopsisExpanded ? undefined : 3}
-                  >
-                    {viewAnime.description}
-                  </Text>
-                  <TouchableOpacity onPress={() => setIsSynopsisExpanded(!isSynopsisExpanded)} style={{ marginTop: 8 }}>
-                    <Text style={{ color: accentColor, fontWeight: 'bold' }}>{isSynopsisExpanded ? 'Show Less' : 'Read More'}</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : null}
-
-              {viewAnime?.status !== 'Will Watch' && (
-                <>
-                  <Text style={[styles.modalSectionTitle, { color: textColor, marginTop: 0 }]}>Progress</Text>
-                  <View style={styles.modalProgressContainer}>
-                    <View style={[styles.modalProgressBox, { backgroundColor: cardBg, borderColor }]}>
-                      <Text style={{ color: '#888', fontWeight: 'bold', marginBottom: 5 }}>Season</Text>
-                      <View style={styles.modalProgressControls}>
-                        <TouchableOpacity onPress={() => updateProgress('season', -1)}><Ionicons name="remove-circle" size={28} color="#888" /></TouchableOpacity>
-                        <TextInput 
-                          style={[styles.modalProgressValue, { color: textColor, padding: 0 }]}
-                          keyboardType="numeric"
-                          maxLength={4}
-                          value={(viewAnime?.season || 1).toString()}
-                          onChangeText={(text) => {
-                            const numericValue = text.replace(/[^0-9]/g, '');
-                            setExactProgress('season', numericValue ? parseInt(numericValue, 10) : 0);
-                          }}
-                          onBlur={() => {
-                            if (!viewAnime?.season || viewAnime.season < 1) setExactProgress('season', 1);
-                          }}
-                        />
-                        <TouchableOpacity onPress={() => updateProgress('season', 1)}><Ionicons name="add-circle" size={28} color={accentColor} /></TouchableOpacity>
-                      </View>
-                    </View>
-                    <View style={[styles.modalProgressBox, { backgroundColor: cardBg, borderColor }]}>
-                      <Text style={{ color: '#888', fontWeight: 'bold', marginBottom: 5 }}>Episode</Text>
-                      <View style={styles.modalProgressControls}>
-                        <TouchableOpacity onPress={() => updateProgress('episode', -1)}><Ionicons name="remove-circle" size={28} color="#888" /></TouchableOpacity>
-                        <TextInput 
-                          style={[styles.modalProgressValue, { color: textColor, padding: 0 }]}
-                          keyboardType="numeric"
-                          maxLength={4}
-                          value={(viewAnime?.episode || 0).toString()}
-                          onChangeText={(text) => {
-                            const numericValue = text.replace(/[^0-9]/g, '');
-                            setExactProgress('episode', numericValue ? parseInt(numericValue, 10) : 0);
-                          }}
-                        />
-                        <TouchableOpacity onPress={() => updateProgress('episode', 1)}><Ionicons name="add-circle" size={28} color={accentColor} /></TouchableOpacity>
-                      </View>
-                    </View>
-                  </View>
-                </>
-              )}
-
-              <Text style={[styles.modalSectionTitle, { color: textColor }]}>Add to Category</Text>
-              {customCategories.length > 0 ? (
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.tagScroll}>
-                  {customCategories.map(cat => { 
-                    const isActive = (viewAnime?.categories || []).includes(cat);
-                    return (
-                      <TouchableOpacity 
-                        key={cat} 
-                        style={[styles.tagPill, { backgroundColor: isActive ? accentColor : cardBg, borderColor: isActive ? accentColor : borderColor }]}
-                        onPress={() => toggleCategory(cat)}
-                      >
-                        <Text style={[styles.tagText, { color: isActive ? '#fff' : textColor }]}>{cat}</Text>
-                      </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
               ) : (
-                <Text style={{ color: '#888', fontStyle: 'italic', marginBottom: 25, marginTop: 5 }}>No custom categories added. You can add them from the top right menu!</Text>
-              )}
-
-              {viewAnime?.status !== 'Will Watch' && (
-                <View style={{ marginBottom: 40 }}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 10, marginBottom: 10 }}>
-                    <Text style={[styles.modalSectionTitle, { color: textColor, margin: 0 }]}>My Review</Text>
-                    {!isEditingComment ? (
-                      <TouchableOpacity onPress={() => setIsEditingComment(true)} style={{ padding: 5 }}>
-                        <Ionicons name="pencil" size={20} color={accentColor} />
-                      </TouchableOpacity>
-                    ) : (
-                      <TouchableOpacity onPress={saveComment} style={{ padding: 5 }}>
-                        <Text style={{ color: accentColor, fontWeight: 'bold', fontSize: 16 }}>Save</Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  {isEditingComment ? (
-                    <TextInput 
-                      style={[styles.input, styles.textArea, { backgroundColor: cardBg, borderColor, color: textColor }]} 
-                      placeholder="Change your mind? Write a new review..." 
-                      placeholderTextColor="#888"
-                      multiline 
-                      value={tempComment}
-                      onChangeText={setTempComment}
-                      autoFocus
-                    />
-                  ) : (
-                    viewAnime?.comments ? (
-                      <View style={[styles.reviewBox, { backgroundColor: cardBg, borderColor }]}>
-                        <Text style={{ color: textColor, fontSize: 16, lineHeight: 24 }}>{viewAnime.comments}</Text>
+                folders.map((folder) => {
+                  const folderAnime = animeList.filter(a => a.folder === folder);
+                  const isRenaming = renamingFolder === folder;
+                  return (
+                    <View key={folder} style={[styles.manageRow, { borderBottomColor: borderColor }]}>
+                      {/* Live mini-stack of the folder's first three covers */}
+                      <View style={styles.manageStack}>
+                        {folderAnime.length === 0 ? (
+                          <View style={[styles.manageThumb, { backgroundColor: borderColor, justifyContent: 'center', alignItems: 'center' }]}>
+                            <Ionicons name="folder-outline" size={16} color="#888" />
+                          </View>
+                        ) : folderAnime.slice(0, 3).map((a, idx) => (
+                          a.imageUri ? (
+                            <Image key={idx} source={{ uri: a.imageUri }} style={[styles.manageThumb, { position: 'absolute', top: idx * 3, left: idx * 3, zIndex: 3 - idx, borderWidth: 1, borderColor: cardBg }]} />
+                          ) : (
+                            <View key={idx} style={[styles.manageThumb, { position: 'absolute', top: idx * 3, left: idx * 3, zIndex: 3 - idx, backgroundColor: borderColor, justifyContent: 'center', alignItems: 'center' }]}>
+                              <Ionicons name="image-outline" size={12} color="#888" />
+                            </View>
+                          )
+                        ))}
                       </View>
-                    ) : (
-                      <TouchableOpacity 
-                        style={[styles.reviewBox, { backgroundColor: cardBg, borderColor, justifyContent: 'center', alignItems: 'center', borderStyle: 'dashed' }]} 
-                        onPress={() => setIsEditingComment(true)}
-                      >
-                        <Text style={{ color: '#888', fontStyle: 'italic' }}>Tap here to add a review...</Text>
-                      </TouchableOpacity>
-                    )
-                  )}
-                </View>
-              )}
 
+                      {isRenaming ? (
+                        <TextInput
+                          style={[styles.manageRenameInput, { borderColor: accentColor, color: textColor }]}
+                          value={renameText}
+                          onChangeText={setRenameText}
+                          autoFocus
+                          onSubmitEditing={() => handleRenameFolder(folder)}
+                          returnKeyType="done"
+                        />
+                      ) : (
+                        <View style={{ flex: 1, marginLeft: 12 }}>
+                          <Text style={{ color: textColor, fontSize: 16, fontWeight: '600' }} numberOfLines={1}>{folder}</Text>
+                          <Text style={{ color: '#888', fontSize: 12, marginTop: 2 }}>{folderAnime.length} {folderAnime.length === 1 ? 'entry' : 'entries'}</Text>
+                        </View>
+                      )}
+
+                      {isRenaming ? (
+                        <TouchableOpacity onPress={() => handleRenameFolder(folder)} style={{ padding: 6, marginLeft: 8 }}>
+                          <Ionicons name="checkmark-circle" size={24} color={accentColor} />
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity onPress={() => { setRenamingFolder(folder); setRenameText(folder); }} style={{ padding: 6, marginLeft: 8 }}>
+                          <Ionicons name="pencil" size={20} color="#888" />
+                        </TouchableOpacity>
+                      )}
+                      <TouchableOpacity onPress={() => handleDeleteFolder(folder)} style={{ padding: 6, marginLeft: 4 }}>
+                        <Ionicons name="trash-outline" size={22} color="#FF3B30" />
+                      </TouchableOpacity>
+                    </View>
+                  );
+                })
+              )}
             </ScrollView>
-          </KeyboardAvoidingView>
-        </SafeAreaView>
+
+          </Animated.View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* --- Moving Anime Modal --- */}
@@ -991,6 +866,61 @@ export default function ListScreen() {
         </SafeAreaView>
       </Modal>
 
+      {/* --- EDIT MODE ACTION BAR --- */}
+      <Animated.View 
+        pointerEvents={isListEditMode ? 'auto' : 'none'}
+        style={[styles.editBar, { backgroundColor: cardBg, borderColor, transform: [{ translateY: editBarAnim }] }]}
+      >
+        <View style={styles.editBarTop}>
+          <View style={[styles.editCountBadge, { backgroundColor: accentColor }]}>
+            <Text style={styles.editCountText}>{selectedAnimeIds.length}</Text>
+          </View>
+          <Text style={[styles.editBarTitle, { color: textColor }]}>Selected</Text>
+
+          <TouchableOpacity style={styles.editBarAction} onPress={toggleSelectAll}>
+            <Text style={{ color: accentColor, fontWeight: '700', fontSize: 13 }}>{allVisibleSelected ? 'None' : 'All'}</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.editBarAction} onPress={handleDeleteSelected}>
+            <Ionicons name="trash-outline" size={20} color="#FF3B30" />
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.editBarDone, { backgroundColor: accentColor }]} onPress={() => setIsListEditMode(false)}>
+            <Text style={styles.editBarDoneText}>Done</Text>
+          </TouchableOpacity>
+        </View>
+
+        {!activeFolder ? (
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingRight: 4 }}>
+            <TouchableOpacity style={[styles.folderChip, styles.newFolderChip, { borderColor: accentColor }]} onPress={openManageFolders}>
+              <Ionicons name="add" size={16} color={accentColor} />
+              <Text style={[styles.folderChipText, { color: accentColor }]}>New Folder</Text>
+            </TouchableOpacity>
+            {folders.map((f) => (
+              <TouchableOpacity key={f} style={[styles.folderChip, { borderColor }]} onPress={() => quickAssign(f)}>
+                <Ionicons name="folder" size={14} color={accentColor} />
+                <Text style={[styles.folderChipText, { color: textColor }]} numberOfLines={1}>{f}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        ) : (
+          <TouchableOpacity style={[styles.removeFolderChip, { borderColor: '#FF3B30' }]} onPress={removeSelectedFromFolder}>
+            <Ionicons name="folder-open-outline" size={14} color="#FF3B30" />
+            <Text style={{ color: '#FF3B30', fontWeight: '700', fontSize: 13 }}>Remove Selected from This Folder</Text>
+          </TouchableOpacity>
+        )}
+      </Animated.View>
+
+      {/* --- Toast Notification --- */}
+      <Animated.View 
+        pointerEvents="none" 
+        style={[
+          styles.toastContainer, 
+          { backgroundColor: accentColor, opacity: toastOpacity, transform: [{ translateY: toastTranslateY }] }
+        ]}
+      >
+        <Ionicons name="checkmark-circle" size={24} color="#fff" />
+        <Text style={styles.toastText}>{toastMessage}</Text>
+      </Animated.View>
+
     </View>
   );
 }
@@ -1007,8 +937,7 @@ const styles = StyleSheet.create({
   searchInput: { flex: 1, fontSize: 16 },
   inputWrapper: { flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderRadius: 8 },
   inputWithClear: { flex: 1, padding: 14, fontSize: 16 },
-  
-  editBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', margin: 15, marginBottom: 0, paddingHorizontal: 20, borderRadius: 10, borderWidth: 1, height: 50 },
+
   activeFolderHeader: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 15, marginTop: 15, paddingBottom: 10, borderBottomWidth: 1, borderBottomColor: '#333' },
 
   listContent: { padding: 15, paddingBottom: 100 }, 
@@ -1036,14 +965,22 @@ const styles = StyleSheet.create({
   genrePill: { paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, marginRight: 4, marginBottom: 4, justifyContent: 'center', alignItems: 'center' },
   listGenreContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4, marginBottom: 4 },
   gridGenreContainer: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 2, marginBottom: 4 },
-  modalGenrePill: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderWidth: 1, marginHorizontal: 4, marginBottom: 8 },
 
+  selectBadge: { position: 'absolute', top: 8, left: 8, width: 24, height: 24, borderRadius: 12, justifyContent: 'center', alignItems: 'center', zIndex: 12 },
+
+  // Backdrop for the manage sheet — as a SIBLING it fills all space above the sheet
   modalOverlayFade: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)' },
   dragIndicator: { width: 40, height: 5, backgroundColor: '#888', borderRadius: 3, alignSelf: 'center', marginBottom: 15 },
   bottomSheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, paddingBottom: 40, borderWidth: 1, maxHeight: '80%' },
   sheetHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
   sheetTitle: { fontSize: 20, fontWeight: 'bold' },
-  folderListItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1 },
+
+  // --- Manage Folders rows ---
+  manageRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1 },
+  manageStack: { width: 44, height: 54, justifyContent: 'center', alignItems: 'center' },
+  manageThumb: { width: 36, height: 48, borderRadius: 4 },
+  manageRenameInput: { flex: 1, borderWidth: 1, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10, fontSize: 15 },
+  createFolderBtn: { width: 32, height: 32, borderRadius: 16, justifyContent: 'center', alignItems: 'center', marginRight: 8 },
 
   // --- CUSTOM ALERT STYLES ---
   modalOverlayFadeCenter: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
@@ -1073,24 +1010,31 @@ const styles = StyleSheet.create({
   },
   toastText: { color: '#fff', fontSize: 15, fontWeight: 'bold', marginLeft: 10, flexShrink: 1 },
 
+  // --- EDIT MODE ACTION BAR ---
+  editBar: { 
+    position: 'absolute', left: 12, right: 12, bottom: 10, 
+    borderRadius: 16, borderWidth: 1, padding: 12, 
+    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, 
+    elevation: 8, zIndex: 50 
+  },
+  editBarTop: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  editCountBadge: { width: 28, height: 28, borderRadius: 14, justifyContent: 'center', alignItems: 'center' },
+  editCountText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+  editBarTitle: { marginLeft: 10, fontSize: 15, fontWeight: '600', flex: 1 },
+  editBarAction: { paddingHorizontal: 10, paddingVertical: 6 },
+  editBarDone: { paddingVertical: 7, paddingHorizontal: 16, borderRadius: 10, marginLeft: 4 },
+  editBarDoneText: { color: '#fff', fontWeight: 'bold', fontSize: 14 },
+
+  folderChip: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8, paddingHorizontal: 12, borderRadius: 20, borderWidth: 1, marginRight: 8, maxWidth: 160 },
+  newFolderChip: { borderStyle: 'dashed' },
+  folderChipText: { marginLeft: 6, fontSize: 13, fontWeight: '600' },
+  removeFolderChip: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 10, borderRadius: 10, borderWidth: 1 },
+
+  // Shared with AnimeDetailScreen (Moving Anime modal still uses these here)
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 15, paddingVertical: 10, borderBottomWidth: 1 },
   closeBtn: { padding: 5 },
   modalHeaderText: { fontSize: 18, fontWeight: 'bold' },
-  modalImageContainer: { width: '100%', height: 350, borderRadius: 12, borderWidth: 1, overflow: 'hidden', justifyContent: 'center', alignItems: 'center', marginBottom: 20 },
-  modalImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   modalTitle: { fontSize: 28, fontWeight: 'bold', textAlign: 'center', marginBottom: 10 },
-  modalStars: { flexDirection: 'row', justifyContent: 'center', gap: 5, marginBottom: 25 },
-  modalSectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 10, marginTop: 10 },
-  
-  modalProgressContainer: { flexDirection: 'row', gap: 10, marginBottom: 25 },
-  modalProgressBox: { flex: 1, borderWidth: 1, borderRadius: 10, padding: 12, alignItems: 'center' },
-  modalProgressControls: { flexDirection: 'row', alignItems: 'center', gap: 15 },
-  modalProgressValue: { fontSize: 20, fontWeight: 'bold', minWidth: 50, textAlign: 'center' },
-
-  tagScroll: { marginBottom: 25 },
-  tagPill: { paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20, borderWidth: 1, marginRight: 10 },
-  tagText: { fontWeight: 'bold', fontSize: 14 },
-  reviewBox: { padding: 15, borderRadius: 12, borderWidth: 1, minHeight: 100 },
 
   formLabel: { fontSize: 16, fontWeight: 'bold', marginBottom: 8 },
   statusButton: { paddingVertical: 12, paddingHorizontal: 20, borderWidth: 1, borderRadius: 8, marginRight: 10, alignItems: 'center' },

@@ -2,12 +2,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, TouchableOpacity, Modal, StyleSheet, ScrollView, Animated, Platform } from 'react-native';
 import { NavigationContainer, useNavigation } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Ionicons } from '@expo/vector-icons';
 import * as SplashScreen from 'expo-splash-screen';
 
 import ListScreen from './src/screens/ListScreen';
 import AddScreen from './src/screens/AddScreen';
 import RecentScreen from './src/screens/RecentScreen';
+import AnimeDetailScreen from './src/screens/AnimeDetailScreen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import EditCategoriesScreen from './src/subscreens/EditCategoriesScreen';
@@ -17,6 +19,7 @@ import SettingsScreen from './src/subscreens/SettingsScreen';
 import AboutScreen from './src/subscreens/AboutScreen';
 
 import ErrorBoundary from './src/components/ErrorBoundary';
+import ReleaseCalendar from './src/components/ReleaseCalendar';
 import { AppProvider, useAppContext } from './src/context/AppContext';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { StorageAccessFramework } from 'expo-file-system/legacy';
@@ -24,6 +27,7 @@ import { StorageAccessFramework } from 'expo-file-system/legacy';
 SplashScreen.preventAutoHideAsync();
 
 const Tab = createBottomTabNavigator();
+const Stack = createNativeStackNavigator();
 
 function TabNavigator() {
   const {
@@ -31,13 +35,14 @@ function TabNavigator() {
     sortBy, setSortBy, isAscending, setIsAscending,
     displayMode, setDisplayMode, isSearchActive, setIsSearchActive,
     selectedGenres, setSelectedGenres, animeList,
-    isListEditMode, setIsListEditMode // Added List Edit Mode state
+    isListEditMode, setIsListEditMode
   } = useAppContext();
 
   const navigation = useNavigation<any>();
 
   const [filterVisible, setFilterVisible] = useState(false);
   const [menuVisible, setMenuVisible] = useState(false);
+  const [calendarVisible, setCalendarVisible] = useState(false);
 
   const bgColor    = theme === 'Dark' ? '#000'     : '#fff';
   const textColor  = theme === 'Dark' ? '#fff'     : '#000';
@@ -141,24 +146,31 @@ function TabNavigator() {
       <Modal animationType="fade" transparent={true} visible={menuVisible} onRequestClose={() => setMenuVisible(false)}>
         <TouchableOpacity style={styles.modalOverlayFade} activeOpacity={1} onPress={() => setMenuVisible(false)}>
           <View style={[styles.menuPopup, { backgroundColor: cardColor, borderColor }]}>
-            
+
             {/* NEW EDIT LIST BUTTON */}
             <TouchableOpacity style={styles.menuItem} onPress={() => { setMenuVisible(false); setIsListEditMode(!isListEditMode); }}>
               <Ionicons name="checkbox-outline" size={20} color={textColor} />
               <Text style={[styles.menuItemText, { color: textColor }]}>{isListEditMode ? 'Exit Edit Mode' : 'Edit List'}</Text>
             </TouchableOpacity>
 
-            <TouchableOpacity style={[styles.menuItem, { marginTop: 15 }]} onPress={() => { setMenuVisible(false); navigation.navigate('More'); }}>
+            {/* These two navigate through 'Tabs' because this menu sits ABOVE the
+                Tab.Navigator — its navigation object is the root STACK's, and a
+                bare-name navigate only searches upward, never into nested
+                navigators. Don't "simplify" these back to navigate('More'). */}
+            <TouchableOpacity style={[styles.menuItem, { marginTop: 15 }]} onPress={() => { setMenuVisible(false); navigation.navigate('Tabs', { screen: 'More' }); }}>
               <Ionicons name="grid-outline" size={20} color={textColor} />
               <Text style={[styles.menuItemText, { color: textColor }]}>More</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={[styles.menuItem, { marginTop: 15 }]} onPress={() => { setMenuVisible(false); navigation.navigate('EditCategories'); }}>
+            <TouchableOpacity style={[styles.menuItem, { marginTop: 15 }]} onPress={() => { setMenuVisible(false); navigation.navigate('Tabs', { screen: 'EditCategories' }); }}>
               <Ionicons name="layers-outline" size={20} color={textColor} />
               <Text style={[styles.menuItemText, { color: textColor }]}>Categories</Text>
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
+
+      {/* RELEASE CALENDAR */}
+      <ReleaseCalendar visible={calendarVisible} onClose={() => setCalendarVisible(false)} />
 
       <Tab.Navigator
         initialRouteName="My List"
@@ -169,6 +181,9 @@ function TabNavigator() {
               <View style={styles.headerRightContainer}>
                 <TouchableOpacity onPress={() => setIsSearchActive(!isSearchActive)} style={styles.headerIcon}>
                   <Ionicons name={isSearchActive ? "close-circle" : "search-outline"} size={24} color={textColor} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setCalendarVisible(true)} style={styles.headerIcon}>
+                  <Ionicons name="calendar-outline" size={24} color={textColor} />
                 </TouchableOpacity>
                 <TouchableOpacity onPress={() => openSheet(setFilterVisible, filterAnim)} style={styles.headerIcon}>
                   <Ionicons name="options-outline" size={24} color={textColor} />
@@ -203,6 +218,24 @@ function TabNavigator() {
         <Tab.Screen name="About" component={AboutScreen} options={{ tabBarItemStyle: { display: 'none' }, tabBarStyle: { display: 'none' }, headerShown: false }} />
       </Tab.Navigator>
     </>
+  );
+}
+
+// ── Root Stack ─────────────────────────────────────────────────────────────────
+// The tabs live INSIDE this stack; AnimeDetail pushes on top of everything.
+// Because the stack keeps the tabs rendered behind it, closing the detail
+// screen slides down over the REAL list — and goBack() always returns to
+// wherever you came from. No hidden-tab tricks, no black void, no Recent.
+function RootStack() {
+  return (
+    <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Screen name="Tabs" component={TabNavigator} />
+      <Stack.Screen
+        name="AnimeDetail"
+        component={AnimeDetailScreen}
+        options={{ presentation: 'transparentModal', animation: 'none', gestureEnabled: false }}
+      />
+    </Stack.Navigator>
   );
 }
 
@@ -310,7 +343,7 @@ function MainApp() {
   return (
     <View style={{ flex: 1 }}>
       <NavigationContainer>
-        <TabNavigator />
+        <RootStack />
       </NavigationContainer>
       <FirstLaunchModal />
     </View>
